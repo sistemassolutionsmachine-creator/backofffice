@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -19,8 +19,9 @@ import {
   cx,
 } from '../components/ui'
 import { useData } from '../store/DataContext'
-import { getEquipo, getRevisionesDeEquipo, revisiones } from '../data/mock'
-import type { EstadoEquipo, Equipo } from '../types'
+import { api } from '../api/client'
+import { fechaCorta } from '../utils/fechas'
+import type { EstadoEquipo, Equipo, Revision } from '../types'
 
 const ESTADOS: Record<
   EstadoEquipo,
@@ -38,17 +39,6 @@ const PESO: Record<EstadoEquipo, number> = {
   operativo: 2,
 }
 
-function fechaCorta(iso: string | null) {
-  if (!iso) return '—'
-  const hoy = new Date()
-  const local = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
-  if (iso === local) return 'hoy'
-  return new Date(`${iso}T12:00:00`).toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-  })
-}
-
 function footerDe(eq: Equipo): { label: string; valor: string } {
   if (eq.estado === 'fuera_servicio')
     return { label: 'Correctivo en curso', valor: `desde ${fechaCorta(eq.ultimaRevision)}` }
@@ -58,10 +48,9 @@ function footerDe(eq: Equipo): { label: string; valor: string } {
   return { label: 'Última revisión', valor: fechaCorta(eq.ultimaRevision) }
 }
 
-function EquipoRow({ eq }: { eq: Equipo }) {
+function EquipoRow({ eq, nRevisiones }: { eq: Equipo; nRevisiones: number }) {
   const est = ESTADOS[eq.estado]
   const footer = footerDe(eq)
-  const nRevisiones = getRevisionesDeEquipo(eq.id).length
   return (
     <Link
       to={`/equipos/${eq.id}`}
@@ -106,10 +95,15 @@ function EquipoRow({ eq }: { eq: Equipo }) {
   )
 }
 
-function ActividadReciente() {
-  const ultimas = [...revisiones]
-    .sort((a, b) => b.fecha.localeCompare(a.fecha))
-    .slice(0, 6)
+function ActividadReciente({
+  revisiones,
+  equipos,
+}: {
+  revisiones: Revision[]
+  equipos: Equipo[]
+}) {
+  const ultimas = revisiones.slice(0, 6)
+  const getEquipo = (id: string) => equipos.find((e) => e.id === id)
 
   return (
     <Card className="overflow-hidden">
@@ -147,7 +141,7 @@ function ActividadReciente() {
                   <span className="truncate">{r.tecnico}</span>
                   <span className="flex items-center gap-1">
                     <Camera className="size-3" />
-                    {r.fotosAntes + r.fotosDespues}
+                    {r.fotosEntrada.length + r.fotosSalida.length}
                   </span>
                 </div>
               </Link>
@@ -160,11 +154,36 @@ function ActividadReciente() {
 }
 
 export function EquiposPage() {
-  const { equipos, empresas } = useData()
+  const { equipos, empresas, cargando } = useData()
   const [params] = useSearchParams()
   const [filtro, setFiltro] = useState<EstadoEquipo | 'todos'>('todos')
   const [abiertas, setAbiertas] = useState<Record<string, boolean>>({})
+  const [revisiones, setRevisiones] = useState<Revision[]>([])
   const empresaFiltro = params.get('empresa') ?? ''
+
+  // El historial alimenta el panel de actividad y el conteo por equipo.
+  useEffect(() => {
+    let vigente = true
+    api.revisiones
+      .listar()
+      .then((r) => {
+        if (vigente) setRevisiones(r)
+      })
+      .catch(() => {
+        if (vigente) setRevisiones([])
+      })
+    return () => {
+      vigente = false
+    }
+  }, [])
+
+  const revisionesPorEquipo = useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const r of revisiones) {
+      mapa.set(r.equipoId, (mapa.get(r.equipoId) ?? 0) + 1)
+    }
+    return mapa
+  }, [revisiones])
 
   const conteos = useMemo(() => {
     const base = empresaFiltro
@@ -345,7 +364,11 @@ export function EquiposPage() {
                 {abierta && (
                   <div className="divide-y divide-zinc-100 border-t border-zinc-100">
                     {lista.map((eq) => (
-                      <EquipoRow key={eq.id} eq={eq} />
+                      <EquipoRow
+                        key={eq.id}
+                        eq={eq}
+                        nRevisiones={revisionesPorEquipo.get(eq.id) ?? 0}
+                      />
                     ))}
                   </div>
                 )}
@@ -355,16 +378,20 @@ export function EquiposPage() {
 
           {grupos.length === 0 && (
             <Card className="p-10 text-center">
-              <p className="text-sm font-semibold text-zinc-900">Sin resultados</p>
-              <p className="mt-1 text-sm text-zinc-500">
-                No hay equipos con los filtros aplicados.
+              <p className="text-sm font-semibold text-zinc-900">
+                {cargando ? 'Cargando equipos…' : 'Sin resultados'}
               </p>
+              {!cargando && (
+                <p className="mt-1 text-sm text-zinc-500">
+                  No hay equipos con los filtros aplicados.
+                </p>
+              )}
             </Card>
           )}
         </div>
 
         {/* Columna lateral: actividad */}
-        <ActividadReciente />
+        <ActividadReciente revisiones={revisiones} equipos={equipos} />
       </div>
     </div>
   )

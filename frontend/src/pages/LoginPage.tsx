@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { QrCode, FileText, Camera, ShieldCheck, ArrowRight, KeyRound } from 'lucide-react'
 import { Button } from '../components/ui'
 import { PinInput, PIN_LARGO } from '../components/PinInput'
-import { rutaDeRol, setRol, validarCredenciales } from '../utils/auth'
+import { iniciarSesion, rutaDeRol } from '../utils/auth'
 
 const features = [
   { icon: QrCode, text: 'Identificación de equipos por código QR' },
@@ -16,24 +16,31 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [usuario, setUsuario] = useState('')
   const [pin, setPin] = useState('')
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [entrando, setEntrando] = useState(false)
 
-  const entrar = (usuarioActual: string, pinActual: string) => {
-    const rol = validarCredenciales(usuarioActual, pinActual)
-    if (!rol) {
-      setError(true)
+  const entrar = async (usuarioActual: string, pinActual: string) => {
+    if (entrando) return
+    setEntrando(true)
+    setError(null)
+    try {
+      const u = await iniciarSesion(usuarioActual, pinActual)
+      navigate(rutaDeRol(u.rol), { replace: true })
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'No se pudo iniciar sesión. Intente de nuevo.',
+      )
       setPin('')
-      return
+    } finally {
+      setEntrando(false)
     }
-    setRol(rol)
-    navigate(rutaDeRol(rol), { replace: true })
   }
 
   const onPinChange = (valor: string) => {
     setPin(valor)
-    setError(false)
+    setError(null)
     // Al completar los 4 dígitos se valida automáticamente
-    if (valor.length === PIN_LARGO) entrar(usuario, valor)
+    if (valor.length === PIN_LARGO) void entrar(usuario, valor)
   }
 
   return (
@@ -106,7 +113,7 @@ export function LoginPage() {
             className="mt-8 space-y-5"
             onSubmit={(e) => {
               e.preventDefault()
-              entrar(usuario, pin)
+              void entrar(usuario, pin)
             }}
           >
             <div>
@@ -117,7 +124,7 @@ export function LoginPage() {
                 value={usuario}
                 onChange={(e) => {
                   setUsuario(e.target.value)
-                  setError(false)
+                  setError(null)
                 }}
                 placeholder="admin, tecnico o cliente"
                 autoComplete="username"
@@ -129,16 +136,16 @@ export function LoginPage() {
               <label className="mb-2 block text-center text-sm font-medium text-zinc-700">
                 PIN de acceso
               </label>
-              <PinInput value={pin} onChange={onPinChange} error={error} />
+              <PinInput value={pin} onChange={onPinChange} error={Boolean(error)} />
             </div>
             {error && (
               <p className="rounded-lg bg-brand-50 px-3 py-2 text-center text-xs font-semibold text-brand-700">
-                Usuario o PIN incorrectos. Verifique e intente de nuevo.
+                {error}
               </p>
             )}
-            <Button type="submit" className="w-full py-3">
-              Ingresar al portal
-              <ArrowRight className="size-4" />
+            <Button type="submit" className="w-full py-3" disabled={entrando}>
+              {entrando ? 'Verificando…' : 'Ingresar al portal'}
+              {!entrando && <ArrowRight className="size-4" />}
             </Button>
 
             {/* Ayuda demo */}

@@ -7,26 +7,37 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import {
-  empresas as empresasSeed,
-  equipos as equiposSeed,
-  usuarios as usuariosSeed,
-} from '../data/mock'
+import { api, getToken } from '../api/client'
 import type { Empresa, Equipo, Usuario } from '../types'
 
-const STORAGE_KEY = 'sm-portal-data-v2'
+/**
+ * Estado compartido del portal.
+ *
+ * Los datos viven en DynamoDB; aquí se mantiene una copia en memoria para no
+ * repetir peticiones en cada pantalla. Tras cada escritura se actualiza esa
+ * copia con lo que devolvió el servidor, que es la fuente de verdad.
+ */
 
 interface DataContextValue {
   equipos: Equipo[]
   empresas: Empresa[]
   usuarios: Usuario[]
-  addEquipo: (data: Omit<Equipo, 'id'>) => Equipo
-  addEmpresa: (data: Omit<Empresa, 'id'>) => Empresa
-  updateEmpresa: (id: string, patch: Partial<Omit<Empresa, 'id'>>) => void
-  removeEmpresa: (id: string) => boolean
-  addUsuario: (data: Omit<Usuario, 'id'>) => Usuario
-  updateUsuario: (id: string, patch: Partial<Omit<Usuario, 'id'>>) => void
-  removeUsuario: (id: string) => void
+  cargando: boolean
+  error: string | null
+  recargar: () => Promise<void>
+
+  addEquipo: (data: Omit<Equipo, 'id'>) => Promise<Equipo>
+  updateEquipo: (id: string, patch: Partial<Equipo>) => Promise<void>
+  removeEquipo: (id: string) => Promise<void>
+
+  addEmpresa: (data: Omit<Empresa, 'id'>) => Promise<Empresa>
+  updateEmpresa: (id: string, patch: Partial<Empresa>) => Promise<void>
+  removeEmpresa: (id: string) => Promise<void>
+
+  addUsuario: (data: Partial<Usuario> & { pin?: string }) => Promise<Usuario>
+  updateUsuario: (id: string, patch: Partial<Usuario>) => Promise<void>
+  removeUsuario: (id: string) => Promise<void>
+
   getEquipo: (id: string) => Equipo | undefined
   getEmpresa: (id: string) => Empresa | undefined
   equiposDeEmpresa: (empresaId: string) => Equipo[]
@@ -34,107 +45,128 @@ interface DataContextValue {
 
 const DataContext = createContext<DataContextValue | null>(null)
 
-function cargarInicial(): {
-  equipos: Equipo[]
-  empresas: Empresa[]
-  usuarios: Usuario[]
-} {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const data = JSON.parse(raw)
-      if (
-        Array.isArray(data.equipos) &&
-        Array.isArray(data.empresas) &&
-        Array.isArray(data.usuarios)
-      ) {
-        return data
-      }
-    }
-  } catch {
-    // Datos corruptos: se re-siembra desde el mock
-  }
-  return { equipos: equiposSeed, empresas: empresasSeed, usuarios: usuariosSeed }
-}
-
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState(cargarInicial)
+  const [equipos, setEquipos] = useState<Equipo[]>([])
+  const [empresas, setEmpresas] = useState<Empresa[]>([])
+  const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const recargar = useCallback(async () => {
+    if (!getToken()) return
+    setCargando(true)
+    setError(null)
+    try {
+      const [eq, em] = await Promise.all([
+        api.equipos.listar(),
+        api.empresas.listar(),
+      ])
+      setEquipos(eq)
+      setEmpresas(em)
+
+      // Solo el administrador puede consultar el listado de usuarios.
+      try {
+        setUsuarios(await api.usuarios.listar())
+      } catch {
+        setUsuarios([])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudieron cargar los datos')
+    } finally {
+      setCargando(false)
+    }
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+    void recargar()
+  }, [recargar])
 
-  const addEquipo = useCallback((data: Omit<Equipo, 'id'>) => {
-    const nuevo: Equipo = { ...data, id: `eq-${Date.now().toString(36)}` }
-    setState((s) => ({ ...s, equipos: [nuevo, ...s.equipos] }))
+  /* ---------- Equipos ---------- */
+
+  const addEquipo = useCallback(async (data: Omit<Equipo, 'id'>) => {
+    const nuevo = await api.equipos.crear(data)
+    setEquipos((s) => [nuevo, ...s])
     return nuevo
   }, [])
 
-  const addEmpresa = useCallback((data: Omit<Empresa, 'id'>) => {
-    const nueva: Empresa = { ...data, id: `em-${Date.now().toString(36)}` }
-    setState((s) => ({ ...s, empresas: [...s.empresas, nueva] }))
+  const updateEquipo = useCallback(async (id: string, patch: Partial<Equipo>) => {
+    const actualizado = await api.equipos.actualizar(id, patch)
+    setEquipos((s) => s.map((e) => (e.id === id ? actualizado : e)))
+  }, [])
+
+  const removeEquipo = useCallback(async (id: string) => {
+    await api.equipos.eliminar(id)
+    setEquipos((s) => s.filter((e) => e.id !== id))
+  }, [])
+
+  /* ---------- Empresas ---------- */
+
+  const addEmpresa = useCallback(async (data: Omit<Empresa, 'id'>) => {
+    const nueva = await api.empresas.crear(data)
+    setEmpresas((s) => [...s, nueva])
     return nueva
   }, [])
 
-  const updateEmpresa = useCallback(
-    (id: string, patch: Partial<Omit<Empresa, 'id'>>) => {
-      setState((s) => ({
-        ...s,
-        empresas: s.empresas.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-      }))
-    },
-    [],
-  )
+  const updateEmpresa = useCallback(async (id: string, patch: Partial<Empresa>) => {
+    const actualizada = await api.empresas.actualizar(id, patch)
+    setEmpresas((s) => s.map((e) => (e.id === id ? actualizada : e)))
+  }, [])
 
-  const removeEmpresa = useCallback(
-    (id: string) => {
-      if (state.equipos.some((eq) => eq.empresaId === id)) return false
-      setState((s) => ({ ...s, empresas: s.empresas.filter((e) => e.id !== id) }))
-      return true
-    },
-    [state.equipos],
-  )
+  const removeEmpresa = useCallback(async (id: string) => {
+    await api.empresas.eliminar(id)
+    setEmpresas((s) => s.filter((e) => e.id !== id))
+  }, [])
 
-  const addUsuario = useCallback((data: Omit<Usuario, 'id'>) => {
-    const nuevo: Usuario = { ...data, id: `us-${Date.now().toString(36)}` }
-    setState((s) => ({ ...s, usuarios: [nuevo, ...s.usuarios] }))
+  /* ---------- Usuarios ---------- */
+
+  const addUsuario = useCallback(async (data: Partial<Usuario> & { pin?: string }) => {
+    const nuevo = await api.usuarios.crear(data)
+    setUsuarios((s) => [nuevo, ...s])
     return nuevo
   }, [])
 
-  const updateUsuario = useCallback(
-    (id: string, patch: Partial<Omit<Usuario, 'id'>>) => {
-      setState((s) => ({
-        ...s,
-        usuarios: s.usuarios.map((u) => (u.id === id ? { ...u, ...patch } : u)),
-      }))
-    },
-    [],
-  )
+  const updateUsuario = useCallback(async (id: string, patch: Partial<Usuario>) => {
+    const actualizado = await api.usuarios.actualizar(id, patch)
+    setUsuarios((s) => s.map((u) => (u.id === id ? actualizado : u)))
+  }, [])
 
-  const removeUsuario = useCallback((id: string) => {
-    setState((s) => ({ ...s, usuarios: s.usuarios.filter((u) => u.id !== id) }))
+  const removeUsuario = useCallback(async (id: string) => {
+    await api.usuarios.eliminar(id)
+    setUsuarios((s) => s.filter((u) => u.id !== id))
   }, [])
 
   const value = useMemo<DataContextValue>(
     () => ({
-      equipos: state.equipos,
-      empresas: state.empresas,
-      usuarios: state.usuarios,
+      equipos,
+      empresas,
+      usuarios,
+      cargando,
+      error,
+      recargar,
       addEquipo,
+      updateEquipo,
+      removeEquipo,
       addEmpresa,
       updateEmpresa,
       removeEmpresa,
       addUsuario,
       updateUsuario,
       removeUsuario,
-      getEquipo: (id) => state.equipos.find((e) => e.id === id),
-      getEmpresa: (id) => state.empresas.find((e) => e.id === id),
+      getEquipo: (id) => equipos.find((e) => e.id === id),
+      getEmpresa: (id) => empresas.find((e) => e.id === id),
       equiposDeEmpresa: (empresaId) =>
-        state.equipos.filter((e) => e.empresaId === empresaId),
+        equipos.filter((e) => e.empresaId === empresaId),
     }),
     [
-      state,
+      equipos,
+      empresas,
+      usuarios,
+      cargando,
+      error,
+      recargar,
       addEquipo,
+      updateEquipo,
+      removeEquipo,
       addEmpresa,
       updateEmpresa,
       removeEmpresa,

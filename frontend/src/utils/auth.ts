@@ -1,37 +1,40 @@
+import { api, limpiarToken, setToken } from '../api/client'
+import type { Usuario } from '../types'
+
 export type Rol = 'admin' | 'tecnico' | 'cliente'
 
-const KEY = 'sm-rol'
+const CLAVE_USUARIO = 'sm-usuario'
 
-/* Credenciales de demo (quemadas en código): usuario + PIN */
-export const PIN_DEMO = '1234'
-export const USUARIOS_DEMO: Record<string, Rol> = {
-  admin: 'admin',
-  tecnico: 'tecnico',
-  cliente: 'cliente',
+export function getUsuario(): Usuario | null {
+  try {
+    const raw = sessionStorage.getItem(CLAVE_USUARIO)
+    return raw ? (JSON.parse(raw) as Usuario) : null
+  } catch {
+    return null
+  }
 }
-
-/* En la demo, el usuario "cliente" pertenece a esta empresa */
-export const CLIENTE_EMPRESA_ID = 'em-02'
 
 export function getRol(): Rol | null {
-  const rol = sessionStorage.getItem(KEY)
-  return rol === 'admin' || rol === 'tecnico' || rol === 'cliente' ? rol : null
+  return getUsuario()?.rol ?? null
 }
 
-export function setRol(rol: Rol) {
-  sessionStorage.setItem(KEY, rol)
+/** Empresa a la que pertenece el usuario cliente. */
+export function getEmpresaDelCliente(): string | null {
+  const u = getUsuario()
+  return u?.rol === 'cliente' ? (u.empresaId ?? null) : null
+}
+
+export async function iniciarSesion(usuario: string, pin: string): Promise<Usuario> {
+  const r = await api.login(usuario.trim().toLowerCase(), pin)
+  setToken(r.token)
+  sessionStorage.setItem(CLAVE_USUARIO, JSON.stringify(r.usuario))
+  return r.usuario
 }
 
 export function cerrarSesion() {
-  sessionStorage.removeItem(KEY)
+  limpiarToken()
+  sessionStorage.removeItem(CLAVE_USUARIO)
   sessionStorage.removeItem('sm-firma')
-}
-
-/** Valida usuario + PIN y devuelve el rol, o null si son inválidos. */
-export function validarCredenciales(usuario: string, pin: string): Rol | null {
-  const rol = USUARIOS_DEMO[usuario.trim().toLowerCase()]
-  if (!rol || pin !== PIN_DEMO) return null
-  return rol
 }
 
 export function rutaDeRol(rol: Rol): string {

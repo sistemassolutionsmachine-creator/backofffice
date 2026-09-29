@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, CameraOff, CheckCircle2, Keyboard, Zap } from 'lucide-react'
 import { Button, Card, PageHeader } from '../../components/ui'
-import { useData } from '../../store/DataContext'
+import { api } from '../../api/client'
 import type { Equipo } from '../../types'
 
 /* API BarcodeDetector (aún sin tipos en TS) */
@@ -16,7 +16,6 @@ type BarcodeDetectorCtor = new (opts: { formats: string[] }) => DetectorQr
 
 export function TecnicoEscanearPage() {
   const navigate = useNavigate()
-  const { equipos } = useData()
   const videoRef = useRef<HTMLVideoElement>(null)
   const yaDetectado = useRef(false)
   const [detectado, setDetectado] = useState<string | null>(null)
@@ -32,15 +31,16 @@ export function TecnicoEscanearPage() {
     setTimeout(() => navigate(`/tecnico/reporte?equipo=${eq.id}`), 1000)
   }
 
-  const onQrLeido = (texto: string) => {
+  const onQrLeido = async (texto: string) => {
     // El QR codifica https://…/t/<codigo>; también acepta el código directo
     const match = texto.match(/\/t\/([\w-]+)/i)
-    const cod = (match ? match[1] : texto).trim().toLowerCase()
-    const eq =
-      equipos.find((e) => e.codigo.toLowerCase() === cod) ??
-      // Demo estática: si el código no está en el mock, abre un equipo aleatorio
-      equipos[Math.floor(Math.random() * equipos.length)]
-    abrirReporte(eq)
+    const cod = (match ? match[1] : texto).trim()
+    try {
+      const eq = await api.equipos.porCodigo(cod)
+      abrirReporte(eq)
+    } catch {
+      setNoEncontrado(true)
+    }
   }
 
   /* Activa la cámara trasera y, si el navegador lo soporta, lee el QR en vivo */
@@ -89,18 +89,12 @@ export function TecnicoEscanearPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const simularLectura = () => {
-    const eq = equipos[Math.floor(Math.random() * equipos.length)]
-    abrirReporte(eq)
-  }
-
-  const buscarCodigo = () => {
-    const eq = equipos.find(
-      (e) => e.codigo.toLowerCase() === codigo.trim().toLowerCase(),
-    )
-    if (eq) {
+  const buscarCodigo = async () => {
+    setNoEncontrado(false)
+    try {
+      const eq = await api.equipos.porCodigo(codigo.trim())
       navigate(`/tecnico/reporte?equipo=${eq.id}`)
-    } else {
+    } catch {
       setNoEncontrado(true)
     }
   }
@@ -175,11 +169,6 @@ export function TecnicoEscanearPage() {
         </div>
       </Card>
 
-      <Button className="w-full py-3" onClick={simularLectura}>
-        <Camera className="size-4" />
-        Simular lectura de QR (demo)
-      </Button>
-
       {/* Entrada manual */}
       <Card className="p-4 sm:p-5">
         <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
@@ -196,7 +185,7 @@ export function TecnicoEscanearPage() {
             placeholder="Ej: SRV-001"
             className="flex-1 rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 font-mono text-sm uppercase placeholder:font-sans placeholder:normal-case placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none"
           />
-          <Button variant="dark" onClick={buscarCodigo}>
+          <Button variant="dark" onClick={() => void buscarCodigo()}>
             Buscar
           </Button>
         </div>

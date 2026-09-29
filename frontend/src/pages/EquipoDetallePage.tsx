@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -18,15 +18,34 @@ import {
   EstadoRevisionBadge,
   TipoServicioBadge,
 } from '../components/ui'
-import { formatFecha, getRevisionesDeEquipo } from '../data/mock'
+import { api } from '../api/client'
+import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { descargarQrPng, urlDeEquipo } from '../utils/qr'
+import type { Revision } from '../types'
 
 export function EquipoDetallePage() {
   const { id } = useParams()
   const { getEquipo, getEmpresa } = useData()
   const qrRef = useRef<HTMLDivElement>(null)
   const equipo = getEquipo(id ?? '')
+  const [historial, setHistorial] = useState<Revision[]>([])
+
+  useEffect(() => {
+    if (!id) return
+    let vigente = true
+    api.revisiones
+      .listar({ equipo: id })
+      .then((r) => {
+        if (vigente) setHistorial(r)
+      })
+      .catch(() => {
+        if (vigente) setHistorial([])
+      })
+    return () => {
+      vigente = false
+    }
+  }, [id])
 
   if (!equipo) {
     return (
@@ -39,7 +58,6 @@ export function EquipoDetallePage() {
     )
   }
 
-  const historial = getRevisionesDeEquipo(equipo.id)
   const empresa = getEmpresa(equipo.empresaId)
   const specs: Array<[string, string]> = [
     ['Código interno', equipo.codigo],
@@ -196,9 +214,9 @@ export function EquipoDetallePage() {
                     <span>{formatFecha(r.fecha)}</span>
                     <span className="flex items-center gap-1">
                       <Camera className="size-3.5" />
-                      {r.fotosAntes + r.fotosDespues} fotos
+                      {r.fotosEntrada.length + r.fotosSalida.length} fotos
                     </span>
-                    {r.duracionMin && <span>{r.duracionMin} min</span>}
+                    {r.firmaTecnico && <span>Firmado</span>}
                   </p>
                 </div>
                 {r.estado === 'completado' && (

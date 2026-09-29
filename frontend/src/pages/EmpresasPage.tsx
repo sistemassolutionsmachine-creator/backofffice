@@ -172,14 +172,15 @@ export function EmpresasPage() {
     }
   }, [params, setParams])
 
-  const eliminar = (empresa: Empresa) => {
+  const eliminar = async (empresa: Empresa) => {
     if (!confirm(`¿Eliminar "${empresa.nombre}"?`)) return
-    const ok = removeEmpresa(empresa.id)
-    setError(
-      ok
-        ? null
-        : `No se puede eliminar "${empresa.nombre}": tiene equipos asignados. Reasigne los equipos primero.`,
-    )
+    try {
+      await removeEmpresa(empresa.id)
+      setError(null)
+    } catch (e) {
+      // El servidor rechaza el borrado si la empresa todavía tiene equipos.
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar la empresa')
+    }
   }
 
   return (
@@ -231,7 +232,7 @@ export function EmpresasPage() {
                   <button
                     type="button"
                     title="Eliminar"
-                    onClick={() => eliminar(em)}
+                    onClick={() => void eliminar(em)}
                     className="rounded-lg p-1.5 text-zinc-400 hover:bg-brand-50 hover:text-brand-600"
                   >
                     <Trash2 className="size-4" />
@@ -280,10 +281,15 @@ export function EmpresasPage() {
         <EmpresaModal
           inicial={modal === 'crear' ? null : modal}
           onClose={() => setModal(null)}
-          onSave={(data) => {
-            if (modal === 'crear') addEmpresa(data)
-            else updateEmpresa(modal.id, data)
-            setModal(null)
+          onSave={async (data) => {
+            try {
+              if (modal === 'crear') await addEmpresa(data)
+              else await updateEmpresa(modal.id, data)
+              setModal(null)
+              setError(null)
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'No se pudo guardar la empresa')
+            }
           }}
         />
       )}

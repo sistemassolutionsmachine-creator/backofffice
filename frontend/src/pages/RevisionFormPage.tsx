@@ -14,14 +14,14 @@ import {
   MinusCircle,
   PenLine,
   Plus,
-  Save,
   Thermometer,
   Trash2,
   X,
   Zap,
 } from 'lucide-react'
 import { Button, Card, PageHeader, cx } from '../components/ui'
-import { siguienteConsecutivo } from '../data/mock'
+import { api } from '../api/client'
+import { hoyISO } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { generarReportePdf } from '../utils/reportePdf'
 import { ESTILOS_FIRMA, getFirma } from '../utils/firma'
@@ -148,13 +148,21 @@ function SectionTitle({
   )
 }
 
+/** Foto lista para mostrar en pantalla y para subir a S3. */
+interface Foto {
+  url: string
+  blob: Blob
+  nombre: string
+}
+
 /**
  * Reduce la foto de cámara (8-12 MP) a máx. 1280px JPEG.
  * Sin esto, el celular repinta imágenes enormes en cada interacción
- * y toda la página se vuelve lenta.
+ * y toda la página se vuelve lenta; además la subida sería mucho más pesada.
  */
-async function comprimirFoto(file: File): Promise<string> {
+async function comprimirFoto(file: File): Promise<Foto> {
   const original = URL.createObjectURL(file)
+  const nombre = file.name || 'foto.jpg'
   try {
     const img = new Image()
     await new Promise<void>((res, rej) => {
@@ -168,16 +176,16 @@ async function comprimirFoto(file: File): Promise<string> {
     canvas.width = Math.round(img.width * escala)
     canvas.height = Math.round(img.height * escala)
     const ctx = canvas.getContext('2d')
-    if (!ctx) return original
+    if (!ctx) return { url: original, blob: file, nombre }
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
     const blob = await new Promise<Blob | null>((res) =>
       canvas.toBlob(res, 'image/jpeg', 0.82),
     )
-    if (!blob) return original
+    if (!blob) return { url: original, blob: file, nombre }
     URL.revokeObjectURL(original)
-    return URL.createObjectURL(blob)
+    return { url: URL.createObjectURL(blob), blob, nombre }
   } catch {
-    return original
+    return { url: original, blob: file, nombre }
   }
 }
 
@@ -189,15 +197,15 @@ function PhotoCapture({
 }: {
   titulo: string
   hint: string
-  fotos: string[]
-  onChange: (fotos: string[]) => void
+  fotos: Foto[]
+  onChange: (fotos: Foto[]) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const onFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
-    const urls = await Promise.all(Array.from(files).map(comprimirFoto))
-    onChange([...fotos, ...urls])
+    const nuevas = await Promise.all(Array.from(files).map(comprimirFoto))
+    onChange([...fotos, ...nuevas])
   }
 
   const tomada = fotos.length > 0
@@ -217,15 +225,19 @@ function PhotoCapture({
 
       {tomada && (
         <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {fotos.map((src, i) => (
+          {fotos.map((foto, i) => (
             <div
-              key={src}
+              key={foto.url}
               className="relative size-24 overflow-hidden rounded-xl shadow-sm ring-1 ring-zinc-200"
             >
-              <img src={src} alt={`Foto ${i + 1}`} className="h-full w-full object-cover" />
+              <img
+                src={foto.url}
+                alt={`Foto ${i + 1}`}
+                className="h-full w-full object-cover"
+              />
               <button
                 type="button"
-                onClick={() => onChange(fotos.filter((u) => u !== src))}
+                onClick={() => onChange(fotos.filter((f) => f.url !== foto.url))}
                 className="absolute top-1 right-1 rounded-full bg-ink-950/70 p-1 text-white"
               >
                 <X className="size-3.5" />
@@ -293,13 +305,16 @@ export function RevisionFormPage() {
   const [analisis, setAnalisis] = useState('')
   const [correctivos, setCorrectivos] = useState('')
   const [observaciones, setObservaciones] = useState('')
-  const [fotosEntrada, setFotosEntrada] = useState<string[]>([])
-  const [fotosSalida, setFotosSalida] = useState<string[]>([])
+  const [fotosEntrada, setFotosEntrada] = useState<Foto[]>([])
+  const [fotosSalida, setFotosSalida] = useState<Foto[]>([])
   const [firmado, setFirmado] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [generandoPdf, setGenerandoPdf] = useState(false)
+  const [guardando, setGuardando] = useState<string | null>(null)
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null)
 
-  const consecutivo = siguienteConsecutivo()
+  // El consecutivo lo asigna el servidor al registrar el reporte.
+  const [consecutivo, setConsecutivo] = useState<string | null>(null)
   const equipo = equipos.find((e) => e.id === equipoId)
   const firmaTecnico = modoTecnico ? getFirma() : null
 
@@ -329,71 +344,141 @@ export function RevisionFormPage() {
   const setVisualItem = (i: number, patch: Partial<{ estado: VisualEstado; obs: string }>) =>
     setVisual((v) => v.map((it, idx) => (idx === i ? { ...it, ...patch } : it)))
 
+  /** Arma el paquete de datos que consumen tanto la API como el PDF. */
+  const datosReporte = () => ({
+    motivo: MOTIVOS.find((m) => m.id === motivo)?.label ?? motivo,
+    tipoEquipo: tipoEquipo
+      ? `${tipoEquipo} · ${TIPOS_EQUIPO.find((t) => t.id === tipoEquipo)?.label ?? ''}`
+      : null,
+    inspeccionVisual: INSPECCION_VISUAL.map((item, i) => ({
+      item,
+      estado: visual[i].estado === 'bien' ? 'BIEN' : visual[i].estado === 'mal' ? 'MAL' : '-',
+      obs: visual[i].obs,
+    })),
+    rutina: rutinaVisible.map(({ texto, i }) => ({
+      item: texto,
+      estado: rutina[i].estado === 'ok' ? 'OK' : rutina[i].estado === 'na' ? 'N/A' : '-',
+      obs: rutina[i].obs,
+    })),
+    medicionesMecanicas: medMec
+      .filter((m) => m.etiqueta || m.sum || m.ret)
+      .map((m) => ({
+        tipo:
+          m.tipo === 'temperatura' ? 'Temp de' : m.tipo === 'presion' ? 'Presión de' : 'Dato de',
+        etiqueta: m.etiqueta,
+        v1: m.sum,
+        v2: m.ret,
+      })),
+    medicionesElectricas: medElec
+      .filter((m) => m.componente || m.vab || m.vbc || m.vca || m.il1 || m.il2 || m.il3)
+      .map((m) => ({
+        componente: m.componente,
+        vab: m.vab,
+        vbc: m.vbc,
+        vca: m.vca,
+        il1: m.il1,
+        il2: m.il2,
+        il3: m.il3,
+      })),
+    monitoreo,
+    analisis,
+    correctivos,
+    observaciones,
+  })
+
+  const datosPdf = (consecutivoFinal: string) => ({
+    ...datosReporte(),
+    consecutivo: consecutivoFinal,
+    equipo: equipo && {
+      codigo: equipo.codigo,
+      nombre: equipo.nombre,
+      modelo: equipo.modelo,
+      serial: equipo.serial,
+      ubicacion: equipo.ubicacion,
+    },
+    fotosEntrada: fotosEntrada.map((f) => f.url),
+    fotosSalida: fotosSalida.map((f) => f.url),
+    firma:
+      modoTecnico && firmado && firmaTecnico
+        ? {
+            nombre: firmaTecnico.nombre,
+            font: ESTILOS_FIRMA[firmaTecnico.estilo].font,
+          }
+        : null,
+  })
+
+  /**
+   * Registra el reporte, archiva las evidencias y el PDF.
+   *
+   * Las fotos viajan del navegador a S3 con URL prefirmada: no pasan por la
+   * API, así que no hay límites de tamaño ni esperas largas en el servidor.
+   */
+  const completar = async () => {
+    if (!equipo || guardando) return
+    setErrorGuardado(null)
+    try {
+      setGuardando('Registrando el reporte…')
+      const revision = await api.revisiones.crear({
+        equipoId: equipo.id,
+        tipo: motivo === 'correctivo' ? 'correctivo' : 'preventivo',
+        estado: 'completado',
+        fecha: hoyISO(),
+        ...datosReporte(),
+        firmaTecnico:
+          firmado && firmaTecnico
+            ? {
+                nombre: firmaTecnico.nombre,
+                estilo: firmaTecnico.estilo,
+                fecha: hoyISO(),
+              }
+            : null,
+      })
+
+      setGuardando('Subiendo las fotografías…')
+      const [clavesEntrada, clavesSalida] = await Promise.all([
+        Promise.all(
+          fotosEntrada.map((f) =>
+            api.revisiones.subirEvidencia(equipo.id, revision.id, 'entrada', f.blob, f.nombre),
+          ),
+        ),
+        Promise.all(
+          fotosSalida.map((f) =>
+            api.revisiones.subirEvidencia(equipo.id, revision.id, 'salida', f.blob, f.nombre),
+          ),
+        ),
+      ])
+
+      setGuardando('Generando y archivando el PDF…')
+      const pdf = await generarReportePdf(datosPdf(revision.consecutivo))
+      await api.revisiones.subirPdf(equipo.id, revision.id, pdf)
+
+      await api.revisiones.actualizar(equipo.id, revision.id, {
+        fotosEntrada: clavesEntrada,
+        fotosSalida: clavesSalida,
+      })
+
+      setConsecutivo(revision.consecutivo)
+      setEnviado(true)
+    } catch (e) {
+      setErrorGuardado(
+        e instanceof Error ? e.message : 'No se pudo registrar el reporte. Intente de nuevo.',
+      )
+    } finally {
+      setGuardando(null)
+    }
+  }
+
   const descargarPdf = async () => {
     setGenerandoPdf(true)
     try {
-      await generarReportePdf({
-        consecutivo,
-        motivo: MOTIVOS.find((m) => m.id === motivo)?.label ?? motivo,
-        equipo: equipo && {
-          codigo: equipo.codigo,
-          nombre: equipo.nombre,
-          modelo: equipo.modelo,
-          serial: equipo.serial,
-          ubicacion: equipo.ubicacion,
-        },
-        tipoEquipo: tipoEquipo
-          ? `${tipoEquipo} · ${TIPOS_EQUIPO.find((t) => t.id === tipoEquipo)?.label ?? ''}`
-          : null,
-        inspeccionVisual: INSPECCION_VISUAL.map((item, i) => ({
-          item,
-          estado:
-            visual[i].estado === 'bien' ? 'BIEN' : visual[i].estado === 'mal' ? 'MAL' : '-',
-          obs: visual[i].obs,
-        })),
-        rutina: rutinaVisible.map(({ texto, i }) => ({
-          item: texto,
-          estado: rutina[i].estado === 'ok' ? 'OK' : rutina[i].estado === 'na' ? 'N/A' : '-',
-          obs: rutina[i].obs,
-        })),
-        medicionesMecanicas: medMec
-          .filter((m) => m.etiqueta || m.sum || m.ret)
-          .map((m) => ({
-            tipo:
-              m.tipo === 'temperatura' ? 'Temp de' : m.tipo === 'presion' ? 'Presión de' : 'Dato de',
-            etiqueta: m.etiqueta,
-            v1: m.sum,
-            v2: m.ret,
-          })),
-        medicionesElectricas: medElec
-          .filter((m) => m.componente || m.vab || m.vbc || m.vca || m.il1 || m.il2 || m.il3)
-          .map((m) => ({
-            componente: m.componente,
-            vab: m.vab,
-            vbc: m.vbc,
-            vca: m.vca,
-            il1: m.il1,
-            il2: m.il2,
-            il3: m.il3,
-          })),
-        monitoreo,
-        analisis,
-        correctivos,
-        observaciones,
-        fotosEntrada,
-        fotosSalida,
-        firma:
-          modoTecnico && firmado && firmaTecnico
-            ? {
-                nombre: firmaTecnico.nombre,
-                font: ESTILOS_FIRMA[firmaTecnico.estilo].font,
-              }
-            : null,
+      await generarReportePdf(datosPdf(consecutivo ?? 'SIN-CONSECUTIVO'), {
+        descargar: true,
       })
     } finally {
       setGenerandoPdf(false)
     }
   }
+
 
   if (enviado) {
     return (
@@ -445,7 +530,9 @@ export function RevisionFormPage() {
           <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
             Serial del reporte
           </p>
-          <p className="mt-1 font-mono text-xl font-extrabold text-zinc-900">{consecutivo}</p>
+          <p className="mt-1 font-mono text-xl font-extrabold text-zinc-900">
+            {consecutivo ?? 'Se asigna al completar'}
+          </p>
         </div>
         <div className="text-right">
           <p className="font-mono text-xs font-bold text-zinc-700">DM-MTT-001 · Rev. 1</p>
@@ -1089,19 +1176,21 @@ export function RevisionFormPage() {
         </Card>
       )}
 
+      {errorGuardado && (
+        <Card className="border-brand-200 bg-brand-50 p-4">
+          <p className="text-sm font-semibold text-brand-700">{errorGuardado}</p>
+        </Card>
+      )}
+
       {/* Acciones */}
       <div className={cx('flex flex-col gap-2 sm:flex-row sm:justify-end', bloqueado)}>
-        <Button variant="secondary" className="sm:w-auto">
-          <Save className="size-4" />
-          Guardar borrador
-        </Button>
         <Button
           className="sm:w-auto"
-          disabled={!puedeCompletar}
-          onClick={() => setEnviado(true)}
+          disabled={!puedeCompletar || Boolean(guardando)}
+          onClick={() => void completar()}
         >
           <FileText className="size-4" />
-          Completar y generar PDF
+          {guardando ?? 'Completar y generar PDF'}
         </Button>
       </div>
     </div>

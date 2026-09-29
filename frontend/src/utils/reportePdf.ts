@@ -91,7 +91,16 @@ async function firmaAImagen(
   }
 }
 
-export async function generarReportePdf(d: DatosReportePdf) {
+/**
+ * Construye el PDF del reporte.
+ *
+ * Devuelve el archivo como Blob para poder archivarlo en S3, y opcionalmente
+ * lo descarga en el dispositivo del técnico.
+ */
+export async function generarReportePdf(
+  d: DatosReportePdf,
+  opciones: { descargar?: boolean } = {},
+): Promise<Blob> {
   const doc = new jsPDF('p', 'mm', 'a4')
   const W = doc.internal.pageSize.getWidth()
   const H = doc.internal.pageSize.getHeight()
@@ -350,5 +359,6 @@ export async function generarReportePdf(d: DatosReportePdf) {
     doc.text(`Página ${p} de ${paginas}`, W - M, H - 6, { align: 'right' })
   }
 
-  doc.save(`Reporte-${d.consecutivo}.pdf`)
+  if (opciones.descargar) doc.save(`Reporte-${d.consecutivo}.pdf`)
+  return doc.output('blob')
 }

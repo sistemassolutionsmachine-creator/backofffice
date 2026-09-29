@@ -20,7 +20,7 @@ import {
   StatCard,
   cx,
 } from '../components/ui'
-import { formatFecha } from '../data/mock'
+import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import type { RolUsuario, Usuario } from '../types'
 
@@ -64,7 +64,7 @@ function UsuarioModal({
 }: {
   inicial: Usuario | null
   usuariosExistentes: Usuario[]
-  onGuardar: (data: Borrador) => void
+  onGuardar: (data: Borrador) => void | Promise<void>
   onCerrar: () => void
 }) {
   const { empresas } = useData()
@@ -288,18 +288,39 @@ export function UsuariosPage() {
   }
   const activos = usuarios.filter((u) => u.estado === 'activo').length
 
-  const guardar = (data: Borrador) => {
-    if (modal.usuario) {
-      updateUsuario(modal.usuario.id, data)
-    } else {
-      addUsuario({ ...data, ultimoAcceso: null })
+  const [error, setError] = useState<string | null>(null)
+
+  const guardar = async (data: Borrador) => {
+    try {
+      if (modal.usuario) {
+        await updateUsuario(modal.usuario.id, data)
+      } else {
+        await addUsuario({ ...data, ultimoAcceso: null })
+      }
+      setModal({ abierto: false, usuario: null })
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el usuario')
     }
-    setModal({ abierto: false, usuario: null })
   }
 
-  const eliminar = (u: Usuario) => {
-    if (confirm(`¿Eliminar a ${u.nombre}? Perderá el acceso al portal.`)) {
-      removeUsuario(u.id)
+  const eliminar = async (u: Usuario) => {
+    if (!confirm(`¿Eliminar a ${u.nombre}? Perderá el acceso al portal.`)) return
+    try {
+      await removeUsuario(u.id)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar el usuario')
+    }
+  }
+
+  const alternarEstado = async (u: Usuario) => {
+    try {
+      await updateUsuario(u.id, {
+        estado: u.estado === 'activo' ? 'inactivo' : 'activo',
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado')
     }
   }
 
@@ -354,6 +375,12 @@ export function UsuariosPage() {
           tone="warn"
         />
       </div>
+
+      {error && (
+        <Card className="border-brand-200 bg-brand-50 p-4">
+          <p className="text-sm font-semibold text-brand-700">{error}</p>
+        </Card>
+      )}
 
       {/* Filtros */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -439,11 +466,7 @@ export function UsuariosPage() {
                 <div className="flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
-                    onClick={() =>
-                      updateUsuario(u.id, {
-                        estado: u.estado === 'activo' ? 'inactivo' : 'activo',
-                      })
-                    }
+                    onClick={() => void alternarEstado(u)}
                     title={u.estado === 'activo' ? 'Desactivar' : 'Activar'}
                     className={cx(
                       'rounded-lg p-2 transition-colors',
@@ -464,7 +487,7 @@ export function UsuariosPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => eliminar(u)}
+                    onClick={() => void eliminar(u)}
                     title="Eliminar"
                     className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
                   >

@@ -53,27 +53,36 @@ export function EquipoNuevoPage() {
   }, [tipo, equipos])
 
   const [codigo, setCodigo] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const codigoFinal = codigo.trim() || codigoSugerido
   const valido = empresaId && nombre.trim() && ubicacion.trim()
 
-  const guardar = () => {
-    if (!valido) return
-    const nuevo = addEquipo({
-      empresaId,
-      codigo: codigoFinal,
-      nombre: nombre.trim(),
-      tipo,
-      marca: marca.trim() || '—',
-      modelo: modelo.trim() || '—',
-      serial: serial.trim() || '—',
-      ubicacion: ubicacion.trim(),
-      fechaInstalacion: fecha,
-      estado,
-      ultimaRevision: null,
-      proximaRevision: '2026-12-23',
-      responsable: responsable.trim() || 'Sin asignar',
-    })
-    setCreado(nuevo)
+  const guardar = async () => {
+    if (!valido || guardando) return
+    setGuardando(true)
+    setError(null)
+    try {
+      const nuevo = await addEquipo({
+        empresaId,
+        codigo: codigoFinal,
+        nombre: nombre.trim(),
+        tipo,
+        marca: marca.trim() || '—',
+        modelo: modelo.trim() || '—',
+        serial: serial.trim() || '—',
+        ubicacion: ubicacion.trim(),
+        fechaInstalacion: fecha,
+        estado,
+        ultimaRevision: null,
+        responsable: responsable.trim() || 'Sin asignar',
+      })
+      setCreado(nuevo)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo registrar el equipo')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   /* Pantalla de éxito con el QR generado */
@@ -336,13 +345,19 @@ export function EquipoNuevoPage() {
         </div>
       </Card>
 
+      {error && (
+        <Card className="border-brand-200 bg-brand-50 p-4">
+          <p className="text-sm font-semibold text-brand-700">{error}</p>
+        </Card>
+      )}
+
       <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={() => navigate('/equipos')}>
           Cancelar
         </Button>
-        <Button disabled={!valido} onClick={guardar}>
+        <Button disabled={!valido || guardando} onClick={() => void guardar()}>
           <Save className="size-4" />
-          Guardar y generar QR
+          {guardando ? 'Guardando…' : 'Guardar y generar QR'}
         </Button>
       </div>
     </div>

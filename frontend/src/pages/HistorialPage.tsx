@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FileText, Download, Camera } from 'lucide-react'
 import {
@@ -10,9 +10,10 @@ import {
   TipoServicioBadge,
   cx,
 } from '../components/ui'
-import { formatFecha, getEquipo, revisiones } from '../data/mock'
+import { api } from '../api/client'
+import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
-import type { TipoServicio } from '../types'
+import type { Revision, TipoServicio } from '../types'
 
 const filtros: Array<{ id: TipoServicio | 'todos'; label: string }> = [
   { id: 'todos', label: 'Todos' },
@@ -22,16 +23,37 @@ const filtros: Array<{ id: TipoServicio | 'todos'; label: string }> = [
 ]
 
 export function HistorialPage() {
-  const { empresas, getEmpresa } = useData()
+  const { empresas, getEmpresa, getEquipo } = useData()
   const [query, setQuery] = useState('')
   const [filtro, setFiltro] = useState<TipoServicio | 'todos'>('todos')
   const [empresaFiltro, setEmpresaFiltro] = useState('')
+  const [revisiones, setRevisiones] = useState<Revision[]>([])
+  const [, setCargando] = useState(true)
+
+  // El filtro por empresa se resuelve en el servidor con el índice adecuado.
+  useEffect(() => {
+    let vigente = true
+    setCargando(true)
+    api.revisiones
+      .listar(empresaFiltro ? { empresa: empresaFiltro } : {})
+      .then((r) => {
+        if (vigente) setRevisiones(r)
+      })
+      .catch(() => {
+        if (vigente) setRevisiones([])
+      })
+      .finally(() => {
+        if (vigente) setCargando(false)
+      })
+    return () => {
+      vigente = false
+    }
+  }, [empresaFiltro])
 
   const lista = useMemo(() => {
     const q = query.trim().toLowerCase()
     return revisiones.filter((r) => {
       const eq = getEquipo(r.equipoId)
-      if (empresaFiltro && eq?.empresaId !== empresaFiltro) return false
       if (filtro !== 'todos' && r.tipo !== filtro) return false
       if (!q) return true
       return [r.consecutivo, r.tecnico, r.observaciones, eq?.nombre, eq?.codigo]
@@ -39,7 +61,7 @@ export function HistorialPage() {
         .toLowerCase()
         .includes(q)
     })
-  }, [query, filtro, empresaFiltro])
+  }, [revisiones, query, filtro, getEquipo])
 
   return (
     <div className="space-y-5">
@@ -121,7 +143,7 @@ export function HistorialPage() {
                 <span>{formatFecha(r.fecha)}</span>
                 <span className="flex items-center gap-1">
                   <Camera className="size-3.5" />
-                  {r.fotosAntes + r.fotosDespues}
+                  {r.fotosEntrada.length + r.fotosSalida.length}
                 </span>
               </div>
             </Card>
@@ -172,7 +194,7 @@ export function HistorialPage() {
                   <td className="px-5 py-3.5">
                     <span className="flex items-center gap-1.5 text-zinc-600">
                       <Camera className="size-4 text-zinc-400" />
-                      {r.fotosAntes + r.fotosDespues}
+                      {r.fotosEntrada.length + r.fotosSalida.length}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
