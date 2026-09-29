@@ -1,6 +1,6 @@
 import type {
-  LambdaFunctionURLEvent,
-  LambdaFunctionURLResult,
+  APIGatewayProxyEventV2,
+  APIGatewayProxyResultV2,
 } from 'aws-lambda'
 import {
   ErrorHttp,
@@ -81,8 +81,8 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
 }
 
 export async function handler(
-  evento: LambdaFunctionURLEvent,
-): Promise<LambdaFunctionURLResult> {
+  evento: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyResultV2> {
   const metodo = evento.requestContext.http.method
 
   // CloudFront sirve el frontend y la API bajo el mismo dominio: sin CORS.

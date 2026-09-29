@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Muestra las cuentas de AWS configuradas y verifica que funcionen.
 

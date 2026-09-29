@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Despliega Solutions Machine completo en AWS.
 
@@ -25,7 +25,10 @@ param(
     [switch]$SinSembrar
 )
 
-$ErrorActionPreference = 'Stop'
+# Los comandos nativos (aws, npm) escriben avisos en stderr de forma habitual.
+# Con 'Stop', PowerShell los trataría como errores fatales; el control real se
+# hace revisando $LASTEXITCODE despues de cada paso.
+$ErrorActionPreference = 'Continue'
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
 
@@ -47,20 +50,27 @@ function Fallo($texto) {
 # --- 1. Verificar credenciales --------------------------------------------
 Paso "Verificando el perfil de AWS '$Perfil'"
 
-$identidad = aws sts get-caller-identity --query 'Arn' --output text 2>&1
+$identidad = aws sts get-caller-identity --query 'Arn' --output text 2>$null
 if ($LASTEXITCODE -ne 0) {
     Fallo @"
 No se pudo autenticar con el perfil '$Perfil'.
 
-Configúrelo primero con:
+Configurelo primero con:
     aws configure --profile $Perfil
 "@
 }
 
-$cuenta = aws sts get-caller-identity --query 'Account' --output text
+$cuenta = aws sts get-caller-identity --query 'Account' --output text 2>$null
 Write-Host "    Identidad : $identidad"
 Write-Host "    Cuenta    : $cuenta"
-Write-Host "    Región    : $Region"
+Write-Host "    Region    : $Region"
+
+if ($identidad -match ':root$') {
+    Write-Host ""
+    Write-Host "    AVISO: esta usando las credenciales del usuario raiz." -ForegroundColor Yellow
+    Write-Host "    Funciona, pero AWS recomienda crear un usuario IAM." -ForegroundColor Yellow
+    Write-Host "    Vea docs/CONFIGURAR-AWS.md, seccion 3." -ForegroundColor Yellow
+}
 
 # --- 2. Secreto de firma de los JWT ---------------------------------------
 Paso "Preparando el secreto de firma"
@@ -98,21 +108,30 @@ if ($LASTEXITCODE -ne 0) { Fallo "Falló la compilación del frontend" }
 Paso "Verificando el bootstrap de CDK"
 
 $bootstrapOk = $false
-$stack = aws cloudformation describe-stacks --stack-name CDKToolkit --query 'Stacks[0].StackStatus' --output text 2>&1
+# Si la pila no existe, el CLI devuelve error: es el caso normal la primera vez.
+$stack = aws cloudformation describe-stacks --stack-name CDKToolkit --query 'Stacks[0].StackStatus' --output text 2>$null
 if ($LASTEXITCODE -eq 0 -and $stack -match 'COMPLETE') { $bootstrapOk = $true }
 
 if ($bootstrapOk) {
     Write-Host "    Ya estaba preparada"
 } else {
     Write-Host "    Preparando la cuenta (solo ocurre la primera vez)..."
-    npm --prefix infra exec cdk -- bootstrap "aws://$cuenta/$Region"
-    if ($LASTEXITCODE -ne 0) { Fallo "Falló el bootstrap de CDK" }
+    # CDK necesita ejecutarse dentro de infra/ para encontrar su cdk.json.
+    Push-Location (Join-Path $raiz 'infra')
+    npx cdk bootstrap "aws://$cuenta/$Region"
+    $codigo = $LASTEXITCODE
+    Pop-Location
+    if ($codigo -ne 0) { Fallo "Fallo el bootstrap de CDK" }
 }
 
 # --- 5. Desplegar ----------------------------------------------------------
 Paso "Desplegando la infraestructura"
-npm --prefix infra exec cdk -- deploy --require-approval never --outputs-file (Join-Path $raiz 'infra\salidas.json')
-if ($LASTEXITCODE -ne 0) { Fallo "Falló el despliegue" }
+
+Push-Location (Join-Path $raiz 'infra')
+npx cdk deploy --require-approval never --outputs-file (Join-Path $raiz 'infra\salidas.json')
+$codigo = $LASTEXITCODE
+Pop-Location
+if ($codigo -ne 0) { Fallo "Fallo el despliegue" }
 
 # --- 6. Sembrar datos iniciales -------------------------------------------
 $salidas = Get-Content (Join-Path $raiz 'infra\salidas.json') -Raw | ConvertFrom-Json

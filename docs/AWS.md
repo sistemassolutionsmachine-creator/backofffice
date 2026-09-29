@@ -19,9 +19,10 @@ empresa pequeña, sin sacrificar seguridad ni trazabilidad.
          │                           │
      /*  ▼                    /api/* ▼
   ┌────────────┐            ┌──────────────────┐
-  │ S3 (web)   │            │ Lambda (Node 22) │  arm64 · 512 MB
-  │ React build│            │  Function URL    │  privada (OAC + IAM)
-  └────────────┘            └────────┬─────────┘
+  │ S3 (web)   │            │  API Gateway     │  HTTP API
+  │ React build│            │       ↓          │
+  └────────────┘            │ Lambda (Node 22) │  arm64 · 512 MB
+                            └────────┬─────────┘
                                      │
                      ┌───────────────┴───────────────┐
                      ▼                               ▼
@@ -33,8 +34,14 @@ empresa pequeña, sin sacrificar seguridad ni trazabilidad.
 ```
 
 **La decisión central:** CloudFront sirve el frontend *y* la API bajo el mismo
-dominio. Eso elimina API Gateway, elimina el CORS y deja la Lambda privada
-(solo CloudFront puede invocarla, mediante Origin Access Control con IAM).
+dominio. El navegador nunca enfrenta CORS y todo queda tras un único HTTPS.
+
+> **Por qué API Gateway y no un Function URL.** Exponer la Lambda directamente
+> con un Function URL sale gratis, pero obliga a CloudFront a firmar cada
+> petición con SigV4, y en ese modo Lambda **rechaza los POST cuyo cliente no
+> calcule el SHA-256 del cuerpo**. Eso complicaría a todos los clientes de la
+> API y dificultaría depurarla. La API HTTP cuesta 1 USD por millón de
+> peticiones: unos **3 centavos al mes** con este volumen.
 
 ---
 
@@ -43,7 +50,8 @@ dominio. Eso elimina API Gateway, elimina el CORS y deja la Lambda privada
 | Servicio | Elección | Motivo |
 |---|---|---|
 | **CloudFront** | Price Class 100 | 1 TB de tráfico al mes siempre gratis. La clase 100 usa solo las ubicaciones más económicas. |
-| **Lambda** | Function URL, arm64, 512 MB | Sin costo de API Gateway. Graviton cuesta ~20 % menos. 1 M de invocaciones al mes siempre gratis. |
+| **API Gateway** | HTTP API (no REST) | La variante HTTP cuesta 1 USD por millón, tres veces menos que la REST, y basta para este caso. |
+| **Lambda** | arm64, 512 MB | Graviton cuesta ~20 % menos. 1 M de invocaciones al mes siempre gratis. |
 | **DynamoDB** | Bajo demanda, tabla única | 25 GB siempre gratis. Sin VPC ni límite de conexiones: encaja de forma natural con Lambda. |
 | **S3** | 2 buckets privados | Uno para el frontend, otro para reportes. Ambos cerrados al público; el acceso va por URL prefirmada. |
 | **CloudWatch** | Retención de 14 días | Sin retención, los logs crecen para siempre y terminan siendo el mayor gasto. |
@@ -53,7 +61,7 @@ dominio. Eso elimina API Gateway, elimina el CORS y deja la Lambda privada
 | Descartado | Habría costado |
 |---|---|
 | NAT Gateway | **32 USD/mes** — el error más común. Solo hace falta si Lambda va en VPC; con DynamoDB no se necesita VPC. |
-| API Gateway | 1 USD por millón de peticiones + complejidad de CORS |
+| API Gateway REST | 3,50 USD por millón (se usa la variante HTTP, tres veces más barata) |
 | RDS / Aurora | 15 – 45 USD/mes |
 | RDS Proxy | 15 USD/mes |
 | Secrets Manager | 0,40 USD por secreto (se usan variables de entorno de Lambda) |
@@ -182,6 +190,7 @@ Escenario: 5 técnicos, ~200 equipos, ~100 reportes al mes con 10 fotos cada uno
 | Servicio | Consumo estimado | Costo |
 |---|---|---|
 | Lambda | ~25.000 invocaciones (gratis: 1 M) | **0,00** |
+| API Gateway | ~25.000 peticiones a 1 USD/millón | 0,03 |
 | CloudFront | ~5 GB (gratis: 1 TB) | **0,00** |
 | DynamoDB | ~50 MB (gratis: 25 GB) | **0,00** |
 | S3 reportes | ~300 MB nuevos al mes | 0,01 – 0,15 |

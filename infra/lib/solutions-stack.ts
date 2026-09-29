@@ -5,6 +5,8 @@ import {
   Stack,
   type StackProps,
 } from 'aws-cdk-lib'
+import * as apigw from 'aws-cdk-lib/aws-apigatewayv2'
+import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import * as budgets from 'aws-cdk-lib/aws-budgets'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
@@ -144,8 +146,23 @@ export class SolutionsStack extends Stack {
     tabla.grantReadWriteData(api)
     bucketReportes.grantReadWrite(api)
 
-    const apiUrl = api.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.AWS_IAM,
+    /*
+     * API HTTP (no REST): cuesta 1 USD por millón de peticiones, es decir unos
+     * 3 centavos al mes con este volumen.
+     *
+     * Se descartó exponer la Lambda con un Function URL porque, al firmar
+     * CloudFront las peticiones con SigV4, Lambda exige que cada cliente
+     * calcule el SHA-256 del cuerpo en los POST. Ese requisito complica a todos
+     * los clientes de la API y dificulta depurarla.
+     */
+    const httpApi = new apigw.HttpApi(this, 'HttpApi', {
+      apiName: 'solutions-machine',
+      description: 'API del portal de mantenimiento',
+      // Sin CORS: CloudFront publica el portal y la API en el mismo dominio.
+      defaultIntegration: new integrations.HttpLambdaIntegration(
+        'IntegracionApi',
+        api,
+      ),
     })
 
     /* ---------------- Frontend ---------------- */
@@ -158,6 +175,30 @@ export class SolutionsStack extends Stack {
       autoDeleteObjects: true,
     })
 
+    /*
+     * Enrutado del SPA con una función de CloudFront.
+     *
+     * La alternativa (errorResponses 403/404 → index.html) se aplica a toda la
+     * distribución, así que convertiría también los errores de la API en HTML
+     * y ocultaría los fallos reales. Esta función solo se asocia al
+     * comportamiento del frontend, de modo que /api/* conserva sus códigos.
+     */
+    const enrutadorSpa = new cloudfront.Function(this, 'EnrutadorSpa', {
+      comment: 'Devuelve index.html para las rutas de React Router',
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  // Si la ruta no apunta a un archivo concreto, la resuelve React Router.
+  if (!uri.includes('.')) {
+    request.uri = '/index.html';
+  }
+  return request;
+}
+      `),
+    })
+
     const distribucion = new cloudfront.Distribution(this, 'Cdn', {
       comment: 'Solutions Machine · portal y API',
       defaultRootObject: 'index.html',
@@ -168,33 +209,27 @@ export class SolutionsStack extends Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         compress: true,
+        functionAssociations: [
+          {
+            function: enrutadorSpa,
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          },
+        ],
       },
       additionalBehaviors: {
-        // Mismo dominio para la API: sin CORS y sin costo de API Gateway.
+        // Mismo dominio para la API: el navegador nunca enfrenta CORS.
         '/api/*': {
-          origin: origins.FunctionUrlOrigin.withOriginAccessControl(apiUrl),
+          origin: new origins.HttpOrigin(
+            `${httpApi.apiId}.execute-api.${this.region}.amazonaws.com`,
+          ),
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          // El origen debe recibir su propio Host, no el de CloudFront.
           originRequestPolicy:
             cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
-      errorResponses: [
-        // React Router resuelve las rutas en el navegador.
-        {
-          httpStatus: 403,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: Duration.minutes(5),
-        },
-        {
-          httpStatus: 404,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-          ttl: Duration.minutes(5),
-        },
-      ],
     })
 
     // Publica el build de Vite e invalida la caché en cada despliegue.
