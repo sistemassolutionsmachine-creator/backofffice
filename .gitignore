@@ -2,9 +2,16 @@
 node_modules/
 dist/
 
+# CDK: artefactos de síntesis y JS compilado
+cdk.out/
+infra/*.js
+infra/*.d.ts
+.cdk.staging/
+
 # Variables de entorno y secretos
 .env
 .env.*
+infra/salidas.json
 
 # Sistema
 .DS_Store

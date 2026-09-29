@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom'
-import { Server, Building2, History } from 'lucide-react'
+import { Server, Building2, History, Users } from 'lucide-react'
 import { LogoSM, cx } from '../ui'
 import { useData } from '../../store/DataContext'
 
@@ -7,6 +7,7 @@ const nav = [
   { to: '/equipos', label: 'Equipos', icon: Server },
   { to: '/empresas', label: 'Empresas', icon: Building2 },
   { to: '/historial', label: 'Historial', icon: History },
+  { to: '/usuarios', label: 'Usuarios', icon: Users },
 ]
 
 export function Sidebar({

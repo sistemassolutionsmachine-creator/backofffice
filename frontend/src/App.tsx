@@ -9,6 +9,7 @@ import { EmpresasPage } from './pages/EmpresasPage'
 import { EscanearPage } from './pages/EscanearPage'
 import { RevisionFormPage } from './pages/RevisionFormPage'
 import { HistorialPage } from './pages/HistorialPage'
+import { UsuariosPage } from './pages/UsuariosPage'
 import { TecnicoLayout } from './components/layout/TecnicoLayout'
 import { TecnicoLoginPage } from './pages/tecnico/TecnicoLoginPage'
 import { TecnicoEscanearPage } from './pages/tecnico/TecnicoEscanearPage'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/escanear" element={<EscanearPage />} />
           <Route path="/revisiones/nueva" element={<RevisionFormPage />} />
           <Route path="/historial" element={<HistorialPage />} />
+          <Route path="/usuarios" element={<UsuariosPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

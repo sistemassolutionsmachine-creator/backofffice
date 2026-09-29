@@ -1,0 +1,19 @@
+{
+  "name": "solutions-machine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portal de gestión de activos y mantenimiento de Solutions Machine",
+  "scripts": {
+    "install:all": "npm install && npm --prefix frontend install && npm --prefix backend install && npm --prefix infra install",
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run typecheck && npm --prefix backend run typecheck",
+    "deploy": "npm run build && npm --prefix infra run deploy",
+    "diff": "npm --prefix infra run diff",
+    "synth": "npm --prefix infra run synth",
+    "seed": "npm --prefix backend run seed"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

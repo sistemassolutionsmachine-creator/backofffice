@@ -44,13 +44,16 @@ export interface Revision {
   duracionMin: number | null
 }
 
-export type RolUsuario = 'admin' | 'supervisor' | 'tecnico' | 'consulta'
+export type RolUsuario = 'admin' | 'tecnico' | 'cliente'
 
 export interface Usuario {
   id: string
   nombre: string
+  usuario: string
   email: string
   rol: RolUsuario
+  /** Solo para el rol cliente: empresa cuyo inventario puede consultar. */
+  empresaId?: string
   estado: 'activo' | 'inactivo'
-  ultimoAcceso: string
+  ultimoAcceso: string | null
 }

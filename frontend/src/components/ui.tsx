@@ -193,9 +193,8 @@ export function TipoServicioBadge({ tipo }: { tipo: TipoServicio }) {
 export function RolBadge({ rol }: { rol: RolUsuario }) {
   const map = {
     admin: { label: 'Administrador', cls: 'bg-ink-900 text-white' },
-    supervisor: { label: 'Supervisor', cls: 'bg-brand-50 text-brand-700' },
     tecnico: { label: 'Técnico', cls: 'bg-sky-50 text-sky-700' },
-    consulta: { label: 'Consulta', cls: 'bg-zinc-100 text-zinc-600' },
+    cliente: { label: 'Cliente', cls: 'bg-brand-50 text-brand-700' },
   }
   const s = map[rol]
   return (
