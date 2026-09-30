@@ -178,6 +178,13 @@ export const api = {
     actualizar: (equipoId: string, id: string, datos: Partial<Revision>) =>
       put<Revision>(`/revisiones/${equipoId}/${id}`, datos),
 
+    /** Firma de recepción por parte del representante del cliente. */
+    firmar: (
+      equipoId: string,
+      id: string,
+      firma: { nombre: string; cargo: string; estilo: string },
+    ) => post<Revision>(`/revisiones/${equipoId}/${id}/firmar`, firma),
+
     /** Pide permiso para subir una foto y la envía directo a S3. */
     subirEvidencia: async (
       equipoId: string,

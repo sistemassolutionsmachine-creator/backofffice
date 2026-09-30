@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, PenLine } from 'lucide-react'
+import { Check, PenLine, X } from 'lucide-react'
 import { Button, cx } from './ui'
 import {
   ESTILOS_FIRMA,
@@ -8,31 +8,69 @@ import {
   type Firma,
 } from '../utils/firma'
 
-export function FirmaModal({ onGuardar }: { onGuardar: (firma: Firma) => void }) {
-  const [nombre, setNombre] = useState('')
+interface Props {
+  onGuardar: (firma: Firma) => void
+  /** Si se puede cerrar sin firmar. El técnico está obligado; el cliente no. */
+  onCerrar?: () => void
+  titulo?: string
+  descripcion?: string
+  /** Pide también el cargo, necesario en la firma de recepción del cliente. */
+  pedirCargo?: boolean
+  nombreInicial?: string
+  textoBoton?: string
+}
+
+/**
+ * Creación de la firma digital.
+ *
+ * La usan tanto el técnico al entrar al portal como el cliente al firmar la
+ * recepción de un reporte.
+ */
+export function FirmaModal({
+  onGuardar,
+  onCerrar,
+  titulo = 'Cree su firma digital',
+  descripcion = 'Se usará para firmar los reportes de mantenimiento.',
+  pedirCargo = false,
+  nombreInicial = '',
+  textoBoton = 'Guardar mi firma',
+}: Props) {
+  const [nombre, setNombre] = useState(nombreInicial)
+  const [cargo, setCargo] = useState('')
   const [estilo, setEstilo] = useState<EstiloFirma | null>(null)
-  const valido = nombre.trim().length >= 3 && estilo !== null
+
+  const valido =
+    nombre.trim().length >= 3 && estilo !== null && (!pedirCargo || cargo.trim().length >= 2)
 
   const guardar = () => {
     if (!valido || !estilo) return
-    const firma: Firma = { nombre: nombre.trim(), estilo }
+    const firma: Firma = { nombre: nombre.trim(), estilo, cargo: cargo.trim() }
     setFirma(firma)
     onGuardar(firma)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/70 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink-950/70 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-            <PenLine className="size-5" />
-          </span>
-          <div>
-            <h2 className="text-lg font-bold text-zinc-900">Cree su firma digital</h2>
-            <p className="text-xs text-zinc-500">
-              Se usará para firmar los reportes de mantenimiento.
-            </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <PenLine className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-lg font-bold text-zinc-900">{titulo}</h2>
+              <p className="text-xs text-zinc-500">{descripcion}</p>
+            </div>
           </div>
+          {onCerrar && (
+            <button
+              type="button"
+              onClick={onCerrar}
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+            >
+              <X className="size-4" />
+            </button>
+          )}
         </div>
 
         <div className="mt-5">
@@ -47,6 +85,20 @@ export function FirmaModal({ onGuardar }: { onGuardar: (firma: Firma) => void })
             className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none"
           />
         </div>
+
+        {pedirCargo && (
+          <div className="mt-4">
+            <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+              Cargo
+            </label>
+            <input
+              value={cargo}
+              onChange={(e) => setCargo(e.target.value)}
+              placeholder="Ej: Jefe de Mantenimiento"
+              className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none"
+            />
+          </div>
+        )}
 
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium text-zinc-700">Estilo de firma</p>
@@ -89,12 +141,8 @@ export function FirmaModal({ onGuardar }: { onGuardar: (firma: Firma) => void })
 
         <Button onClick={guardar} disabled={!valido} className="mt-5 w-full py-3">
           <PenLine className="size-4" />
-          Guardar mi firma
+          {textoBoton}
         </Button>
-        <p className="mt-3 text-center text-[11px] text-zinc-400">
-          Obligatorio para diligenciar reportes. Podrá firmar con un toque al final del
-          formulario.
-        </p>
       </div>
     </div>
   )

@@ -218,9 +218,14 @@ export async function urlSubidaEvidencia(req: Peticion) {
   return ok({ url, clave })
 }
 
-/** URL prefirmada para subir el PDF final del reporte. */
+/**
+ * URL prefirmada para subir el PDF final del reporte.
+ *
+ * El cliente también puede hacerlo, pero solo para reportes de su empresa:
+ * al firmar, el documento se rehace para que incluya su firma.
+ */
 export async function urlSubidaPdf(req: Peticion) {
-  exigir(req, 'tecnico', 'admin')
+  const auth = exigir(req, 'tecnico', 'admin', 'cliente')
   const { equipoId, revisionId } = cuerpo<CuerpoSubida>(req)
   if (!equipoId || !revisionId) throw malaPeticion('Faltan datos del reporte')
 
@@ -228,9 +233,58 @@ export async function urlSubidaPdf(req: Peticion) {
   const revision = revisiones.find((r) => r.id === revisionId)
   if (!revision) throw noEncontrado('Revisión no encontrada')
 
+  if (auth.rol === 'cliente' && revision.empresaId !== auth.empresaId) throw prohibido()
+
   const clave = clavePdf(revision.empresaId, revision.consecutivo)
   const url = await urlDeSubida(clave, 'application/pdf')
   await update(k.revision(equipoId, revision.fecha, revisionId), { pdfKey: clave })
 
   return ok({ url, clave })
+}
+
+/* ---------- Firma del cliente ---------- */
+
+interface CuerpoFirma {
+  nombre?: string
+  cargo?: string
+  estilo?: string
+}
+
+/**
+ * El representante del cliente firma un reporte ya entregado.
+ *
+ * Solo puede firmar reportes completados de su propia empresa, y una única
+ * vez: la firma es la constancia de que recibió el servicio.
+ */
+export async function firmarCliente(
+  req: Peticion,
+  equipoId: string,
+  revisionId: string,
+) {
+  const auth = exigir(req, 'cliente')
+  const { nombre, cargo, estilo } = cuerpo<CuerpoFirma>(req)
+
+  if (!nombre?.trim()) throw malaPeticion('Debe indicar el nombre de quien firma')
+
+  const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
+  const revision = revisiones.find((r) => r.id === revisionId)
+  if (!revision) throw noEncontrado('Reporte no encontrado')
+
+  if (revision.empresaId !== auth.empresaId) throw prohibido()
+  if (revision.estado !== 'completado') {
+    throw malaPeticion('Este reporte todavía no ha sido entregado por el técnico')
+  }
+  if (revision.firmaCliente) {
+    throw malaPeticion('Este reporte ya fue firmado')
+  }
+
+  const firmaCliente = {
+    nombre: nombre.trim(),
+    cargo: cargo?.trim() ?? '',
+    estilo: estilo ?? 'clasica',
+    fecha: new Date().toISOString().slice(0, 10),
+  }
+
+  await update(k.revision(equipoId, revision.fecha, revisionId), { firmaCliente })
+  return ok({ ...limpiar(revision), firmaCliente })
 }

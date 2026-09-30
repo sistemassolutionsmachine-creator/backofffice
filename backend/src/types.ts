@@ -112,7 +112,12 @@ export interface Revision {
   /** Clave S3 del PDF generado. */
   pdfKey: string | null
   firmaTecnico: { nombre: string; estilo: string; fecha: string } | null
-  firmaCliente: { nombre: string; cargo: string; fecha: string } | null
+  firmaCliente: {
+    nombre: string
+    cargo: string
+    estilo: string
+    fecha: string
+  } | null
 }
 
 export interface TokenPayload {

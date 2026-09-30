@@ -89,7 +89,12 @@ export interface Revision {
   fotosSalida: string[]
   pdfKey: string | null
   firmaTecnico: { nombre: string; estilo: string; fecha: string } | null
-  firmaCliente: { nombre: string; cargo: string; fecha: string } | null
+  firmaCliente: {
+    nombre: string
+    cargo: string
+    estilo: string
+    fecha: string
+  } | null
 }
 
 /** Revisión con enlaces temporales para ver fotos y PDF. */

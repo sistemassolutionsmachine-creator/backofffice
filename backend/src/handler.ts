@@ -66,7 +66,10 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       if (a === 'evidencias' && m === 'POST') return revisiones.urlSubidaEvidencia(req)
       if (a === 'pdf' && m === 'POST') return revisiones.urlSubidaPdf(req)
       // /revisiones/<equipoId>/<revisionId>
-      if (a && b && m === 'GET') return revisiones.obtener(req, a, b)
+      if (a && b && c === 'firmar' && m === 'POST') {
+        return revisiones.firmarCliente(req, a, b)
+      }
+      if (a && b && !c && m === 'GET') return revisiones.obtener(req, a, b)
       if (a && b && (m === 'PUT' || m === 'PATCH')) {
         return revisiones.actualizar(req, a, b)
       }
@@ -81,7 +84,6 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       break
   }
 
-  void c
   throw noEncontrado(`Ruta no encontrada: ${m} /${req.segmentos.join('/')}`)
 }
 

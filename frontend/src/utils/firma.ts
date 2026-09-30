@@ -3,6 +3,8 @@ export type EstiloFirma = 'clasica' | 'moderna'
 export interface Firma {
   nombre: string
   estilo: EstiloFirma
+  /** Solo se usa en la firma de recepción del cliente. */
+  cargo?: string
 }
 
 export const ESTILOS_FIRMA: Record<

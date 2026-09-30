@@ -30,8 +30,15 @@ export interface DatosReportePdf {
   observaciones: string
   fotosEntrada: string[]
   fotosSalida: string[]
-  /** Firma del técnico; el cliente siempre queda pendiente por firmar. */
-  firma?: { nombre: string; font: string } | null
+  /** Firma del técnico que ejecutó el servicio. */
+  firma?: { nombre: string; font: string; fecha?: string } | null
+  /** Firma de quien recibe por parte del cliente, si ya firmó. */
+  firmaCliente?: {
+    nombre: string
+    cargo?: string
+    font: string
+    fecha?: string
+  } | null
 }
 
 const BRAND: [number, number, number] = [230, 58, 73]
@@ -295,17 +302,46 @@ export async function generarReportePdf(
   y += 10
 
   const anchoCol = (W - M * 2 - 6) / 2
-  const cajas: Array<{ x: number; titulo: string; tecnico: boolean }> = [
-    { x: M, titulo: 'REPRESENTANTE DEL CLIENTE', tecnico: false },
-    { x: M + anchoCol + 6, titulo: 'REPRESENTANTE SOLUTIONS MACHINE', tecnico: true },
-  ]
+  const formatear = (iso?: string) =>
+    new Date(iso ? `${iso}T12:00:00` : Date.now()).toLocaleDateString('es-CO', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
 
-  const firmaImg = d.firma ? await firmaAImagen(d.firma.nombre, d.firma.font) : null
-  const hoyStr = new Date().toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  const [imgTecnico, imgCliente] = await Promise.all([
+    d.firma ? firmaAImagen(d.firma.nombre, d.firma.font) : Promise.resolve(null),
+    d.firmaCliente
+      ? firmaAImagen(d.firmaCliente.nombre, d.firmaCliente.font)
+      : Promise.resolve(null),
+  ])
+
+  const cajas = [
+    {
+      x: M,
+      titulo: 'REPRESENTANTE DEL CLIENTE',
+      firma: d.firmaCliente
+        ? {
+            nombre: d.firmaCliente.nombre,
+            pie: d.firmaCliente.cargo
+              ? `${d.firmaCliente.cargo} · ${formatear(d.firmaCliente.fecha)}`
+              : `Firmado digitalmente · ${formatear(d.firmaCliente.fecha)}`,
+            img: imgCliente,
+          }
+        : null,
+    },
+    {
+      x: M + anchoCol + 6,
+      titulo: 'REPRESENTANTE SOLUTIONS MACHINE',
+      firma: d.firma
+        ? {
+            nombre: d.firma.nombre,
+            pie: `Firmado digitalmente · ${formatear(d.firma.fecha)}`,
+            img: imgTecnico,
+          }
+        : null,
+    },
+  ]
 
   for (const caja of cajas) {
     doc.setDrawColor(200, 200, 205)
@@ -318,22 +354,23 @@ export async function generarReportePdf(
     const centroX = caja.x + anchoCol / 2
     const lineaY = y + altoFirma - 11
 
-    if (caja.tecnico && d.firma) {
-      if (firmaImg) {
+    if (caja.firma) {
+      const img = caja.firma.img
+      if (img) {
         const alto = 13
-        const ancho = Math.min(alto * (firmaImg.w / firmaImg.h), anchoCol - 14)
-        doc.addImage(firmaImg.data, 'PNG', centroX - ancho / 2, lineaY - alto - 1, ancho, alto)
+        const ancho = Math.min(alto * (img.w / img.h), anchoCol - 14)
+        doc.addImage(img.data, 'PNG', centroX - ancho / 2, lineaY - alto - 1, ancho, alto)
       }
       doc.setDrawColor(120, 120, 128)
       doc.line(caja.x + 10, lineaY, caja.x + anchoCol - 10, lineaY)
       doc.setTextColor(39, 39, 42)
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(8)
-      doc.text(d.firma.nombre, centroX, lineaY + 4.5, { align: 'center' })
+      doc.text(caja.firma.nombre, centroX, lineaY + 4.5, { align: 'center' })
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(6.5)
       doc.setTextColor(120, 120, 128)
-      doc.text(`Firmado digitalmente · ${hoyStr}`, centroX, lineaY + 8.5, { align: 'center' })
+      doc.text(caja.firma.pie, centroX, lineaY + 8.5, { align: 'center' })
     } else {
       doc.setTextColor(160, 160, 168)
       doc.setFont('helvetica', 'italic')
