@@ -21,7 +21,7 @@ import {
 import { api } from '../api/client'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
-import { descargarQrPng, urlDeEquipo } from '../utils/qr'
+import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
 import type { Revision } from '../types'
 
 export function EquipoDetallePage() {
@@ -30,6 +30,7 @@ export function EquipoDetallePage() {
   const qrRef = useRef<HTMLDivElement>(null)
   const equipo = getEquipo(id ?? '')
   const [historial, setHistorial] = useState<Revision[]>([])
+  const [descargandoQr, setDescargandoQr] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -142,29 +143,45 @@ export function EquipoDetallePage() {
           <p className="mt-1 text-xs text-zinc-500">
             Imprima y adhiera esta etiqueta al equipo.
           </p>
+          {/* Vista previa con el mismo diseño que tendrá la etiqueta impresa */}
           <div
             ref={qrRef}
-            className="mt-4 rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-4"
+            className="mt-4 w-full max-w-56 overflow-hidden rounded-2xl border border-zinc-300 bg-white"
           >
-            <QRCodeSVG
-              value={urlDeEquipo(equipo.codigo)}
-              size={148}
-              fgColor="#0a0a0c"
-              marginSize={1}
-            />
-            <p className="mt-2 font-mono text-xs font-bold text-zinc-900">{equipo.codigo}</p>
+            <div className="h-1.5 bg-brand-600" />
+            <div className="px-4 pt-3 pb-4">
+              <p className="text-[10px] leading-tight font-semibold tracking-wide text-zinc-500 uppercase">
+                {empresa?.nombre ?? 'Sin empresa'}
+              </p>
+              <p className="mt-1 font-mono text-lg font-extrabold text-zinc-900">
+                {equipo.codigo}
+              </p>
+              <div className="mt-3 flex justify-center">
+                <QRCodeSVG
+                  value={urlDeEquipo(equipo.codigo)}
+                  size={148}
+                  fgColor="#000000"
+                  marginSize={0}
+                />
+              </div>
+            </div>
           </div>
           <div className="mt-4 flex w-full gap-2">
             <Button
               variant="secondary"
               className="flex-1"
-              onClick={() => {
-                const svg = qrRef.current?.querySelector('svg')
-                if (svg) descargarQrPng(svg, equipo.codigo)
+              disabled={descargandoQr}
+              onClick={async () => {
+                setDescargandoQr(true)
+                try {
+                  await descargarEtiquetaQr(equipo.codigo, empresa?.nombre ?? '')
+                } finally {
+                  setDescargandoQr(false)
+                }
               }}
             >
               <Download className="size-4" />
-              Descargar
+              {descargandoQr ? 'Generando…' : 'Descargar'}
             </Button>
             <Button variant="dark" className="flex-1" onClick={() => window.print()}>
               <Printer className="size-4" />

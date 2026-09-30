@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Building2,
+  Download,
   MapPin,
   Pencil,
   Phone,
   Plus,
+  QrCode,
   Server,
   Trash2,
   User,
@@ -13,7 +15,8 @@ import {
 } from 'lucide-react'
 import { Button, Card, PageHeader, cx } from '../components/ui'
 import { useData } from '../store/DataContext'
-import type { Empresa } from '../types'
+import { descargarEtiquetasDeEmpresa } from '../utils/qr'
+import type { Empresa, Equipo } from '../types'
 
 const inputCls =
   'w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm placeholder:text-zinc-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none'
@@ -163,6 +166,8 @@ export function EmpresasPage() {
   const [params, setParams] = useSearchParams()
   const [modal, setModal] = useState<'crear' | Empresa | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [descargando, setDescargando] = useState<string | null>(null)
+  const [progreso, setProgreso] = useState<string | null>(null)
 
   // Permite llegar con /empresas?nueva=1 desde "Registrar equipo"
   useEffect(() => {
@@ -171,6 +176,28 @@ export function EmpresasPage() {
       setParams({}, { replace: true })
     }
   }, [params, setParams])
+
+  /**
+   * Genera todas las etiquetas de la empresa y las entrega en un único
+   * archivo comprimido, con una carpeta por empresa.
+   */
+  const descargarQrs = async (empresa: Empresa, equipos: Equipo[]) => {
+    setDescargando(empresa.id)
+    setProgreso(null)
+    setError(null)
+    try {
+      await descargarEtiquetasDeEmpresa(empresa, equipos, (hechos, total) => {
+        setProgreso(`Generando ${hechos} de ${total}…`)
+      })
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'No se pudieron generar los códigos QR',
+      )
+    } finally {
+      setDescargando(null)
+      setProgreso(null)
+    }
+  }
 
   const eliminar = async (empresa: Empresa) => {
     if (!confirm(`¿Eliminar "${empresa.nombre}"?`)) return
@@ -223,6 +250,19 @@ export function EmpresasPage() {
                 <div className="flex shrink-0 gap-0.5">
                   <button
                     type="button"
+                    title={
+                      equipos.length
+                        ? `Descargar los ${equipos.length} códigos QR`
+                        : 'Esta empresa no tiene equipos'
+                    }
+                    disabled={equipos.length === 0 || descargando === em.id}
+                    onClick={() => void descargarQrs(em, equipos)}
+                    className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <QrCode className="size-4" />
+                  </button>
+                  <button
+                    type="button"
                     title="Editar"
                     onClick={() => setModal(em)}
                     className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
@@ -272,6 +312,20 @@ export function EmpresasPage() {
                   </Link>
                 </div>
               </div>
+
+              {equipos.length > 0 && (
+                <Button
+                  variant="secondary"
+                  className="mt-3 w-full"
+                  disabled={descargando === em.id}
+                  onClick={() => void descargarQrs(em, equipos)}
+                >
+                  <Download className="size-4" />
+                  {descargando === em.id
+                    ? (progreso ?? 'Preparando…')
+                    : `Descargar ${equipos.length} códigos QR`}
+                </Button>
+              )}
             </Card>
           )
         })}

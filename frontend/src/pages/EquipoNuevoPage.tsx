@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { Button, Card, PageHeader } from '../components/ui'
 import { useData } from '../store/DataContext'
-import { descargarQrPng, urlDeEquipo } from '../utils/qr'
+import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
 import type { Equipo, EstadoEquipo } from '../types'
 
 const tipos = [
@@ -54,6 +54,7 @@ export function EquipoNuevoPage() {
 
   const [codigo, setCodigo] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [descargandoQr, setDescargandoQr] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const codigoFinal = codigo.trim() || codigoSugerido
   const valido = empresaId && nombre.trim() && ubicacion.trim()
@@ -101,31 +102,45 @@ export function EquipoNuevoPage() {
             <span className="font-semibold text-zinc-900">{empresa?.nombre}</span>.
           </p>
 
+          {/* Vista previa de la etiqueta tal como se descargará */}
           <div
             ref={qrRef}
-            className="mx-auto mt-5 w-fit rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-4"
+            className="mx-auto mt-5 w-56 overflow-hidden rounded-2xl border border-zinc-300 bg-white"
           >
-            <QRCodeSVG
-              value={urlDeEquipo(creado.codigo)}
-              size={180}
-              fgColor="#0a0a0c"
-              marginSize={1}
-            />
-            <p className="mt-2 font-mono text-sm font-bold text-zinc-900">
-              {creado.codigo}
-            </p>
+            <div className="h-1.5 bg-brand-600" />
+            <div className="px-4 pt-3 pb-4">
+              <p className="text-[10px] leading-tight font-semibold tracking-wide text-zinc-500 uppercase">
+                {empresa?.nombre ?? 'Sin empresa'}
+              </p>
+              <p className="mt-1 font-mono text-lg font-extrabold text-zinc-900">
+                {creado.codigo}
+              </p>
+              <div className="mt-3 flex justify-center">
+                <QRCodeSVG
+                  value={urlDeEquipo(creado.codigo)}
+                  size={160}
+                  fgColor="#000000"
+                  marginSize={0}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="mt-6 flex flex-col gap-2">
             <Button
               className="w-full"
-              onClick={() => {
-                const svg = qrRef.current?.querySelector('svg')
-                if (svg) descargarQrPng(svg, creado.codigo)
+              disabled={descargandoQr}
+              onClick={async () => {
+                setDescargandoQr(true)
+                try {
+                  await descargarEtiquetaQr(creado.codigo, empresa?.nombre ?? '')
+                } finally {
+                  setDescargandoQr(false)
+                }
               }}
             >
               <Download className="size-4" />
-              Descargar QR en PNG
+              {descargandoQr ? 'Generando…' : 'Descargar QR en PNG'}
             </Button>
             <Button
               variant="dark"
