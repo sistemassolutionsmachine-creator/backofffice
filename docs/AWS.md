@@ -116,12 +116,70 @@ Ciclo de vida del bucket de reportes:
 
 ---
 
-## 5. Seguridad
+## 5. Correo (Amazon SES)
 
-- La Lambda Function URL es **privada** (`AWS_IAM` + Origin Access Control).
-  Solo CloudFront puede invocarla; no es accesible desde internet.
+Los usuarios nuevos reciben un enlace para definir su propio PIN. **La
+credencial nunca viaja por correo**: el enlace es de un solo uso y caduca en
+48 horas.
+
+```
+Admin crea el usuario
+   └─→ Correo: "Active su cuenta" + enlace único
+          └─→ El usuario abre el enlace y elige su PIN
+                 └─→ El enlace queda inutilizado
+```
+
+Si el correo no puede enviarse, **el alta no falla**: la pantalla le muestra
+el enlace al administrador para que lo entregue por otro medio.
+
+### Poner SES en marcha
+
+1. **Verificar el remitente.** Consola → *Amazon SES* → *Identities* →
+   *Create identity*. Lo ideal es verificar el dominio completo
+   (`solutionsmachine.co`) con DKIM, porque mejora mucho la entregabilidad;
+   para empezar basta con verificar una dirección concreta.
+
+2. **Salir del entorno de pruebas.** SES arranca en *sandbox*: solo envía a
+   direcciones verificadas, máximo 200 al día. Para escribir a clientes reales
+   hay que pedir acceso a producción:
+
+   ```powershell
+   aws sesv2 put-account-details `
+     --production-access-enabled `
+     --mail-type TRANSACTIONAL `
+     --website-url https://solutionsmachine.co `
+     --additional-contact-email-addresses soporte@solutionsmachine.co `
+     --contact-language ES `
+     --profile solutions
+   ```
+
+   AWS responde en menos de 24 horas.
+
+3. **Indicar el remitente al desplegar:**
+
+   ```powershell
+   $env:EMAIL_REMITENTE = "no-responder@solutionsmachine.co"
+   $env:URL_PORTAL = "https://d2u9ifgrghgtoq.cloudfront.net"
+   .\scripts\desplegar.ps1 -Perfil solutions
+   ```
+
+**Costo:** 0,16 USD por cada 1.000 correos. Con unas decenas de altas al año,
+es prácticamente cero. Los primeros 12 meses incluyen 3.000 correos al mes sin
+cargo.
+
+---
+
+## 6. Seguridad
+
 - Ambos buckets tienen bloqueo total de acceso público y cifrado en reposo.
 - El PIN se guarda como hash `scrypt` con sal única. Nunca en texto plano.
+- **Freno a la fuerza bruta**: un PIN de cuatro dígitos son 10.000
+  combinaciones, así que tras **5 fallos** se bloquea ese usuario **15
+  minutos**. Los contadores llevan TTL y DynamoDB los borra solo.
+- Los enlaces de activación se guardan **hasheados** (SHA-256): ni con acceso
+  a la base de datos se podrían reconstruir los pendientes.
+- El mensaje de error del login es el mismo para usuario inexistente y PIN
+  errado: no revela cuál de los dos falló.
 - El JWT se firma con HMAC-SHA256 y se valida con comparación en tiempo
   constante.
 - El rol `cliente` queda acotado a su empresa **en el servidor**: aunque

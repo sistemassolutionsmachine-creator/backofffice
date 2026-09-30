@@ -11,6 +11,7 @@ import * as budgets from 'aws-cdk-lib/aws-budgets'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
+import * as iam from 'aws-cdk-lib/aws-iam'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import * as logs from 'aws-cdk-lib/aws-logs'
@@ -53,6 +54,8 @@ export class SolutionsStack extends Stack {
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       // Bajo demanda: se paga por petición, sin capacidad reservada ociosa.
       billing: dynamodb.Billing.onDemand(),
+      // Los registros de intentos fallidos se borran solos al caducar.
+      timeToLiveAttribute: 'expira',
       // Protege ante un borrado accidental de datos productivos.
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.RETAIN,
@@ -134,6 +137,10 @@ export class SolutionsStack extends Stack {
         TABLE_NAME: tabla.tableName,
         BUCKET_REPORTES: bucketReportes.bucketName,
         JWT_SECRET: process.env.JWT_SECRET ?? 'cambiar-en-produccion',
+        // Remitente verificado en SES. Sin él, los enlaces de activación se
+        // muestran en pantalla al administrador en vez de enviarse.
+        EMAIL_REMITENTE: process.env.EMAIL_REMITENTE ?? '',
+        URL_PORTAL: process.env.URL_PORTAL ?? '',
         NODE_OPTIONS: '--enable-source-maps',
       },
       bundling: {
@@ -145,6 +152,14 @@ export class SolutionsStack extends Stack {
 
     tabla.grantReadWriteData(api)
     bucketReportes.grantReadWrite(api)
+
+    // Envío de invitaciones y restablecimientos de PIN.
+    api.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
+        resources: ['*'],
+      }),
+    )
 
     /*
      * API HTTP (no REST): cuesta 1 USD por millón de peticiones, es decir unos

@@ -1,5 +1,6 @@
-import { hashPin } from '../lib/auth.js'
+import { crearTokenActivacion } from '../lib/auth.js'
 import { get, k, limpiar, nuevoId, put, query, remove, update } from '../lib/dynamo.js'
+import { enlaceActivacion, enviarInvitacion } from '../lib/email.js'
 import {
   creado,
   cuerpo,
@@ -12,13 +13,15 @@ import {
 } from '../lib/http.js'
 import type { Usuario, UsuarioConPin } from '../types.js'
 
-const PIN_POR_DEFECTO = '1234'
+/** Horas que dura el enlace de activación antes de caducar. */
+const VIGENCIA_HORAS = 48
 
-/** Nunca se expone el hash del PIN. */
-function publico(u: UsuarioConPin): Usuario {
-  const { pinHash, ...resto } = limpiar(u)
-  void pinHash
-  return resto
+/** Nunca se exponen el hash del PIN ni el del enlace. */
+function publico(u: UsuarioConPin): Usuario & { pendienteActivacion: boolean } {
+  const { pinHash, activacionHash, activacionExpira, ...resto } = limpiar(u)
+  void activacionHash
+  void activacionExpira
+  return { ...resto, pendienteActivacion: !pinHash }
 }
 
 export async function listar(req: Peticion) {
@@ -37,9 +40,43 @@ async function buscarPorUsuario(usuario: string) {
   return u ?? null
 }
 
+/**
+ * Prepara un enlace de activación y trata de enviarlo por correo.
+ *
+ * Si el correo no sale (SES en pruebas, usuario sin email...), se devuelve el
+ * enlace para que el administrador lo entregue por otro medio: el alta del
+ * usuario nunca queda bloqueada por un problema de correo.
+ */
+async function prepararInvitacion(
+  usuario: UsuarioConPin,
+  esRestablecimiento: boolean,
+) {
+  const { token, hash } = crearTokenActivacion()
+  const expira = Math.floor(Date.now() / 1000) + VIGENCIA_HORAS * 3600
+
+  await update(k.usuario(usuario.id), {
+    activacionHash: hash,
+    activacionExpira: expira,
+  })
+
+  const envio = await enviarInvitacion(
+    usuario.email,
+    usuario.nombre,
+    token,
+    esRestablecimiento,
+  )
+
+  return {
+    correoEnviado: envio.enviado,
+    motivo: envio.motivo,
+    // Solo se revela al administrador autenticado que acaba de crear el alta.
+    enlace: envio.enviado ? undefined : enlaceActivacion(token),
+  }
+}
+
 export async function crear(req: Peticion) {
   exigir(req, 'admin')
-  const datos = cuerpo<Partial<Usuario> & { pin?: string }>(req)
+  const datos = cuerpo<Partial<Usuario>>(req)
 
   if (!datos.nombre?.trim()) throw malaPeticion('El nombre es obligatorio')
   if (!datos.usuario?.trim()) throw malaPeticion('El usuario de acceso es obligatorio')
@@ -56,12 +93,13 @@ export async function crear(req: Peticion) {
     id: nuevoId('us'),
     nombre: datos.nombre.trim(),
     usuario: nombreUsuario,
-    email: datos.email ?? '',
+    email: datos.email?.trim() ?? '',
     rol: datos.rol ?? 'tecnico',
     empresaId: datos.rol === 'cliente' ? datos.empresaId : undefined,
     estado: datos.estado ?? 'activo',
     ultimoAcceso: null,
-    pinHash: hashPin(datos.pin ?? PIN_POR_DEFECTO),
+    // Sin PIN: lo define el propio usuario desde el enlace de activación.
+    pinHash: '',
   }
 
   await put({
@@ -70,7 +108,9 @@ export async function crear(req: Peticion) {
     GSI2SK: nombreUsuario,
     ...usuario,
   })
-  return creado(publico(usuario))
+
+  const invitacion = await prepararInvitacion(usuario, false)
+  return creado({ ...publico(usuario), ...invitacion })
 }
 
 export async function actualizar(req: Peticion, id: string) {
@@ -78,7 +118,7 @@ export async function actualizar(req: Peticion, id: string) {
   const actual = await get<UsuarioConPin>(k.usuario(id))
   if (!actual) throw noEncontrado('Usuario no encontrado')
 
-  const datos = cuerpo<Partial<Usuario> & { pin?: string }>(req)
+  const datos = cuerpo<Partial<Usuario>>(req)
   const nombreUsuario = datos.usuario?.trim().toLowerCase()
 
   if (nombreUsuario && nombreUsuario !== actual.usuario) {
@@ -95,27 +135,30 @@ export async function actualizar(req: Peticion, id: string) {
   const patch: Record<string, unknown> = {
     nombre: datos.nombre?.trim(),
     usuario: nombreUsuario,
-    email: datos.email,
+    email: datos.email?.trim(),
     rol: datos.rol,
     estado: datos.estado,
     // Al dejar de ser cliente se descarta la empresa asignada.
     empresaId: rol === 'cliente' ? (datos.empresaId ?? actual.empresaId) : null,
   }
   if (nombreUsuario) patch.GSI2SK = nombreUsuario
-  if (datos.pin) patch.pinHash = hashPin(datos.pin)
 
   await update(k.usuario(id), patch)
-  return ok(publico({ ...actual, ...datos, id } as UsuarioConPin))
+
+  const actualizado = await get<UsuarioConPin>(k.usuario(id))
+  return ok(publico(actualizado ?? actual))
 }
 
-/** Restablece el PIN al valor por defecto y lo devuelve una única vez. */
+/** Invalida el PIN actual y envía un enlace para definir uno nuevo. */
 export async function reiniciarPin(req: Peticion, id: string) {
   exigir(req, 'admin')
   const actual = await get<UsuarioConPin>(k.usuario(id))
   if (!actual) throw noEncontrado('Usuario no encontrado')
 
-  await update(k.usuario(id), { pinHash: hashPin(PIN_POR_DEFECTO) })
-  return ok({ pin: PIN_POR_DEFECTO })
+  await update(k.usuario(id), { pinHash: '' })
+  const invitacion = await prepararInvitacion(actual, true)
+
+  return ok(invitacion)
 }
 
 export async function eliminar(req: Peticion, id: string) {

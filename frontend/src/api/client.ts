@@ -92,6 +92,16 @@ export interface RespuestaLogin {
   usuario: Usuario
 }
 
+/** Resultado del envío de la invitación para definir el PIN. */
+export interface Invitacion {
+  correoEnviado: boolean
+  motivo?: string
+  /** Presente solo si el correo no pudo enviarse. */
+  enlace?: string
+}
+
+export type UsuarioCreado = Usuario & Invitacion
+
 export const api = {
   login: (usuario: string, pin: string) =>
     post<RespuestaLogin>('/auth/login', { usuario, pin }),
@@ -100,6 +110,14 @@ export const api = {
     get<{ id: string; usuario: string; rol: string; empresaId?: string }>(
       '/auth/sesion',
     ),
+
+  /** Comprueba el enlace de activación antes de pedir el PIN. */
+  verificarActivacion: (token: string) =>
+    post<{ nombre: string; usuario: string }>('/auth/activar/verificar', { token }),
+
+  /** El usuario define su PIN y queda con la sesión iniciada. */
+  activar: (token: string, pin: string) =>
+    post<RespuestaLogin>('/auth/activar', { token, pin }),
 
   /* ---------- Empresas ---------- */
   empresas: {
@@ -178,11 +196,14 @@ export const api = {
   /* ---------- Usuarios ---------- */
   usuarios: {
     listar: () => get<Usuario[]>('/usuarios'),
-    crear: (datos: Partial<Usuario> & { pin?: string }) =>
-      post<Usuario>('/usuarios', datos),
-    actualizar: (id: string, datos: Partial<Usuario> & { pin?: string }) =>
+    /**
+     * Crea el usuario y dispara la invitación. Si el correo no pudo salir,
+     * la respuesta trae el enlace para entregarlo por otro medio.
+     */
+    crear: (datos: Partial<Usuario>) => post<UsuarioCreado>('/usuarios', datos),
+    actualizar: (id: string, datos: Partial<Usuario>) =>
       put<Usuario>(`/usuarios/${id}`, datos),
-    reiniciarPin: (id: string) => post<{ pin: string }>(`/usuarios/${id}/pin`),
+    reiniciarPin: (id: string) => post<Invitacion>(`/usuarios/${id}/pin`),
     eliminar: (id: string) => del(`/usuarios/${id}`),
   },
 }

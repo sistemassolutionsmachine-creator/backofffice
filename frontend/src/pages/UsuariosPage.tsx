@@ -239,8 +239,9 @@ function UsuarioModal({
           <div className="flex items-start gap-2 rounded-xl bg-sky-50 px-3.5 py-3 text-xs text-sky-900">
             <KeyRound className="mt-0.5 size-3.5 shrink-0" />
             <p>
-              El PIN de acceso se genera automáticamente y se envía al correo del usuario.
-              En esta demo todos los PIN son <span className="font-mono font-bold">1234</span>.
+              El usuario recibirá un correo con un enlace para definir su propio PIN.
+              El enlace caduca en 48 horas y solo puede usarse una vez: la
+              credencial nunca viaja por correo.
             </p>
           </div>
         </div>
@@ -263,7 +264,8 @@ function UsuarioModal({
 }
 
 export function UsuariosPage() {
-  const { usuarios, empresas, addUsuario, updateUsuario, removeUsuario } = useData()
+  const { usuarios, empresas, addUsuario, updateUsuario, removeUsuario, reiniciarPin } =
+    useData()
   const [query, setQuery] = useState('')
   const [filtro, setFiltro] = useState<RolUsuario | 'todos'>('todos')
   const [modal, setModal] = useState<{ abierto: boolean; usuario: Usuario | null }>({
@@ -289,18 +291,41 @@ export function UsuariosPage() {
   const activos = usuarios.filter((u) => u.estado === 'activo').length
 
   const [error, setError] = useState<string | null>(null)
+  const [invitacion, setInvitacion] = useState<{
+    nombre: string
+    enviado: boolean
+    enlace?: string
+  } | null>(null)
 
   const guardar = async (data: Borrador) => {
     try {
       if (modal.usuario) {
         await updateUsuario(modal.usuario.id, data)
+        setInvitacion(null)
       } else {
-        await addUsuario({ ...data, ultimoAcceso: null })
+        const nuevo = await addUsuario({ ...data, ultimoAcceso: null })
+        setInvitacion({
+          nombre: nuevo.nombre,
+          enviado: nuevo.correoEnviado,
+          enlace: nuevo.enlace,
+        })
       }
       setModal({ abierto: false, usuario: null })
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar el usuario')
+    }
+  }
+
+  /** Invalida el PIN actual y genera un enlace nuevo. */
+  const restablecerPin = async (u: Usuario) => {
+    if (!confirm(`¿Enviar a ${u.nombre} un enlace para definir un PIN nuevo?`)) return
+    try {
+      const r = await reiniciarPin(u.id)
+      setInvitacion({ nombre: u.nombre, enviado: r.correoEnviado, enlace: r.enlace })
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo restablecer el PIN')
     }
   }
 
@@ -379,6 +404,61 @@ export function UsuariosPage() {
       {error && (
         <Card className="border-brand-200 bg-brand-50 p-4">
           <p className="text-sm font-semibold text-brand-700">{error}</p>
+        </Card>
+      )}
+
+      {/* Resultado del envío de la invitación */}
+      {invitacion && (
+        <Card
+          className={cx(
+            'p-4',
+            invitacion.enviado
+              ? 'border-emerald-200 bg-emerald-50'
+              : 'border-amber-200 bg-amber-50',
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {invitacion.enviado ? (
+                <p className="text-sm font-semibold text-emerald-800">
+                  Se envió a {invitacion.nombre} un correo para definir su PIN.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-amber-900">
+                    No se pudo enviar el correo a {invitacion.nombre}.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    Comparta este enlace por otro medio. Caduca en 48 horas y solo
+                    puede usarse una vez.
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-3 py-2 font-mono text-xs text-zinc-700 ring-1 ring-amber-200">
+                      {invitacion.enlace}
+                    </code>
+                    <Button
+                      variant="secondary"
+                      className="shrink-0"
+                      onClick={() => {
+                        if (invitacion.enlace) {
+                          void navigator.clipboard.writeText(invitacion.enlace)
+                        }
+                      }}
+                    >
+                      Copiar
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setInvitacion(null)}
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/60 hover:text-zinc-700"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </Card>
       )}
 
@@ -476,6 +556,14 @@ export function UsuariosPage() {
                     )}
                   >
                     <Power className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void restablecerPin(u)}
+                    title="Enviar enlace para definir un PIN nuevo"
+                    className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+                  >
+                    <KeyRound className="size-4" />
                   </button>
                   <button
                     type="button"

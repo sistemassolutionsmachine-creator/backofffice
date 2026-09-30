@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { api, getToken } from '../api/client'
+import { api, getToken, type Invitacion, type UsuarioCreado } from '../api/client'
 import type { Empresa, Equipo, Usuario } from '../types'
 
 /**
@@ -34,9 +34,10 @@ interface DataContextValue {
   updateEmpresa: (id: string, patch: Partial<Empresa>) => Promise<void>
   removeEmpresa: (id: string) => Promise<void>
 
-  addUsuario: (data: Partial<Usuario> & { pin?: string }) => Promise<Usuario>
+  addUsuario: (data: Partial<Usuario>) => Promise<UsuarioCreado>
   updateUsuario: (id: string, patch: Partial<Usuario>) => Promise<void>
   removeUsuario: (id: string) => Promise<void>
+  reiniciarPin: (id: string) => Promise<Invitacion>
 
   getEquipo: (id: string) => Equipo | undefined
   getEmpresa: (id: string) => Empresa | undefined
@@ -119,7 +120,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   /* ---------- Usuarios ---------- */
 
-  const addUsuario = useCallback(async (data: Partial<Usuario> & { pin?: string }) => {
+  const addUsuario = useCallback(async (data: Partial<Usuario>) => {
     const nuevo = await api.usuarios.crear(data)
     setUsuarios((s) => [nuevo, ...s])
     return nuevo
@@ -133,6 +134,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const removeUsuario = useCallback(async (id: string) => {
     await api.usuarios.eliminar(id)
     setUsuarios((s) => s.filter((u) => u.id !== id))
+  }, [])
+
+  const reiniciarPin = useCallback(async (id: string) => {
+    return api.usuarios.reiniciarPin(id)
   }, [])
 
   const value = useMemo<DataContextValue>(
@@ -152,6 +157,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addUsuario,
       updateUsuario,
       removeUsuario,
+      reiniciarPin,
       getEquipo: (id) => equipos.find((e) => e.id === id),
       getEmpresa: (id) => empresas.find((e) => e.id === id),
       equiposDeEmpresa: (empresaId) =>
@@ -173,6 +179,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addUsuario,
       updateUsuario,
       removeUsuario,
+      reiniciarPin,
     ],
   )
 

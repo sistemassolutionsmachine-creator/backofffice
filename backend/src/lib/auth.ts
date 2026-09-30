@@ -1,4 +1,5 @@
 import {
+  createHash,
   createHmac,
   randomBytes,
   scryptSync,
@@ -71,4 +72,28 @@ export function verificarPin(pin: string, almacenado: string): boolean {
   const esperado = Buffer.from(hashHex, 'hex')
   if (hash.length !== esperado.length) return false
   return timingSafeEqual(hash, esperado)
+}
+
+/* ---------- Enlaces de activación ---------- */
+
+/**
+ * Genera el token que viaja en el enlace de activación.
+ *
+ * Solo se guarda su hash: si alguien obtuviera acceso a la base de datos,
+ * no podría reconstruir los enlaces pendientes.
+ */
+export function crearTokenActivacion() {
+  const token = randomBytes(32).toString('hex')
+  return { token, hash: hashToken(token) }
+}
+
+export function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+export function tokenCoincide(token: string, hashGuardado: string) {
+  const a = Buffer.from(hashToken(token))
+  const b = Buffer.from(hashGuardado)
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
 }

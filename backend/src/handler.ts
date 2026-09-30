@@ -36,6 +36,10 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
     case 'auth':
       if (a === 'login' && m === 'POST') return auth.login(req)
       if (a === 'sesion' && m === 'GET') return auth.sesion(req)
+      if (a === 'activar' && b === 'verificar' && m === 'POST') {
+        return auth.verificarActivacion(req)
+      }
+      if (a === 'activar' && !b && m === 'POST') return auth.activar(req)
       break
 
     case 'empresas':

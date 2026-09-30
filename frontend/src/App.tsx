@@ -14,12 +14,14 @@ import { TecnicoLayout } from './components/layout/TecnicoLayout'
 import { TecnicoLoginPage } from './pages/tecnico/TecnicoLoginPage'
 import { TecnicoEscanearPage } from './pages/tecnico/TecnicoEscanearPage'
 import { ClientePortalPage } from './pages/cliente/ClientePortalPage'
+import { ActivarCuentaPage } from './pages/ActivarCuentaPage'
 
 export default function App() {
   return (
     <DataProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/activar/:token" element={<ActivarCuentaPage />} />
 
         {/* Flujo del técnico (acceso vía QR) */}
         <Route path="/t" element={<TecnicoLoginPage />} />

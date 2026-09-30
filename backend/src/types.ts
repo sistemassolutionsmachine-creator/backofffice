@@ -41,9 +41,16 @@ export interface Usuario {
   ultimoAcceso: string | null
 }
 
-/** Usuario tal como se guarda: incluye el hash del PIN, que nunca sale en la API. */
+/**
+ * Usuario tal como se guarda. Ni el hash del PIN ni el del enlace de
+ * activación salen nunca en las respuestas de la API.
+ */
 export interface UsuarioConPin extends Usuario {
+  /** Vacío mientras el usuario no haya definido su PIN. */
   pinHash: string
+  activacionHash?: string | null
+  /** Epoch en segundos. */
+  activacionExpira?: number | null
 }
 
 export interface Revision {
