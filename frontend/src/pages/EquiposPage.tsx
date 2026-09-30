@@ -9,6 +9,7 @@ import {
   FileText,
   Plus,
   Server,
+  Upload,
 } from 'lucide-react'
 import {
   Button,
@@ -21,6 +22,7 @@ import {
 import { useData } from '../store/DataContext'
 import { api } from '../api/client'
 import { fechaCorta } from '../utils/fechas'
+import { nombreVisible } from '../types'
 import type { EstadoEquipo, Equipo, Revision } from '../types'
 
 const ESTADOS: Record<
@@ -65,7 +67,7 @@ function EquipoRow({ eq, nRevisiones }: { eq: Equipo; nRevisiones: number }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-zinc-900">
-          {eq.nombre}
+          {nombreVisible(eq)}
         </span>
         <span className="block truncate text-xs text-zinc-500">
           <span className="font-mono sm:hidden">{eq.codigo} · </span>
@@ -134,7 +136,7 @@ function ActividadReciente({
                   </span>
                 </div>
                 <p className="mt-1 truncate text-sm font-semibold text-zinc-800">
-                  {eq?.nombre}
+                  {eq ? nombreVisible(eq) : "Equipo"}
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-500">
                   <TipoServicioBadge tipo={r.tipo} />
@@ -237,12 +239,20 @@ export function EquiposPage() {
             : `${equipos.length} equipos en ${new Set(equipos.map((e) => e.empresaId)).size} empresas · ${hoy}`
         }
         actions={
-          <Link to="/equipos/nuevo">
-            <Button>
-              <Plus className="size-4" />
-              Registrar equipo
-            </Button>
-          </Link>
+          <>
+            <Link to="/equipos/importar">
+              <Button variant="secondary">
+                <Upload className="size-4" />
+                Importar
+              </Button>
+            </Link>
+            <Link to="/equipos/nuevo">
+              <Button>
+                <Plus className="size-4" />
+                Registrar equipo
+              </Button>
+            </Link>
+          </>
         }
       />
 

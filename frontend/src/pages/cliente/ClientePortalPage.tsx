@@ -11,6 +11,7 @@ import {
 import { api } from '../../api/client'
 import { formatFecha } from '../../utils/fechas'
 import { cerrarSesion, getUsuario } from '../../utils/auth'
+import { nombreVisible } from '../../types'
 import type { Empresa, Equipo, Revision } from '../../types'
 
 export function ClientePortalPage() {
@@ -151,7 +152,7 @@ export function ClientePortalPage() {
                         <span className="mr-2 font-mono text-xs font-semibold text-zinc-500">
                           {eq.codigo}
                         </span>
-                        {eq.nombre}
+                        {nombreVisible(eq)}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
                         <MapPin className="size-3" />
@@ -196,7 +197,7 @@ export function ClientePortalPage() {
                         </span>
                       </div>
                       <p className="mt-1 text-sm font-semibold text-zinc-800">
-                        {eq?.nombre ?? 'Equipo'}
+                        {eq ? nombreVisible(eq) : "Equipo"}
                       </p>
                       {r.observaciones && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">

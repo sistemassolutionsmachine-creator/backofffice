@@ -4,6 +4,7 @@ import { AppLayout } from './components/layout/AppLayout'
 import { LoginPage } from './pages/LoginPage'
 import { EquiposPage } from './pages/EquiposPage'
 import { EquipoNuevoPage } from './pages/EquipoNuevoPage'
+import { EquiposImportarPage } from './pages/EquiposImportarPage'
 import { EquipoDetallePage } from './pages/EquipoDetallePage'
 import { EmpresasPage } from './pages/EmpresasPage'
 import { EscanearPage } from './pages/EscanearPage'
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/equipos" replace />} />
           <Route path="/equipos" element={<EquiposPage />} />
           <Route path="/equipos/nuevo" element={<EquipoNuevoPage />} />
+          <Route path="/equipos/importar" element={<EquiposImportarPage />} />
           <Route path="/equipos/:id" element={<EquipoDetallePage />} />
           <Route path="/empresas" element={<EmpresasPage />} />
           <Route path="/escanear" element={<EscanearPage />} />

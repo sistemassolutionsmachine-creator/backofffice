@@ -53,6 +53,7 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
     case 'equipos':
       if (!a && m === 'GET') return equipos.listar(req)
       if (!a && m === 'POST') return equipos.crear(req)
+      if (a === 'importar' && m === 'POST') return equipos.importar(req)
       if (a === 'codigo' && b && m === 'GET') return equipos.porCodigo(req, b)
       if (a && !b && m === 'GET') return equipos.obtener(req, a)
       if (a && (m === 'PUT' || m === 'PATCH')) return equipos.actualizar(req, a)

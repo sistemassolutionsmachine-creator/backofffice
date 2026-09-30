@@ -11,20 +11,45 @@ export interface Empresa {
   ciudad: string
 }
 
+/**
+ * Ficha de un equipo.
+ *
+ * Los campos replican el cuadro de equipos que maneja la empresa, de modo que
+ * una hoja de cálculo existente se pueda cargar sin transformaciones.
+ */
 export interface Equipo {
   id: string
   empresaId: string
+  /** Identificador impreso en la etiqueta QR. Único en todo el inventario. */
   codigo: string
-  nombre: string
+  /** Sistema al que pertenece: VRF Samsung, CHWS, Ventilación mecánica… */
+  sistema: string
+  /** Tipo de equipo: UMA, Unid. Extracción, UCO Refrigerante Variable… */
   tipo: string
-  marca: string
-  modelo: string
+  /** Denominación en planos, si la tiene: AHU-08, IDU-01. */
+  nombre: string
+  /** Serial del fabricante. */
   serial: string
   ubicacion: string
-  fechaInstalacion: string
+  /** Zona o subsistema al que sirve. */
+  zona: string
+  marca: string
+  modelo: string
+  /** Caudal de aire. Aplica a manejadoras y extractores. */
+  caudal: string
+  /** Capacidad térmica. Aplica a condensadoras y chillers. */
+  capacidad: string
+  /** Tensión nominal, en formato 208/3/60. */
+  tension: string
+  corriente: string
+  /* --- Campos que gestiona la aplicación, no la hoja de cálculo --- */
   estado: EstadoEquipo
   ultimaRevision: string | null
-  responsable: string
+}
+
+/** Nombre a mostrar: usa la denominación de planos si existe. */
+export function nombreVisible(eq: Pick<Equipo, 'nombre' | 'tipo'>) {
+  return eq.nombre?.trim() || eq.tipo
 }
 
 export type TipoServicio = 'preventivo' | 'correctivo' | 'revision' | 'instalacion'

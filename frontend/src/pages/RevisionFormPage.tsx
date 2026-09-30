@@ -25,6 +25,7 @@ import { hoyISO } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { generarReportePdf } from '../utils/reportePdf'
 import { ESTILOS_FIRMA, getFirma } from '../utils/firma'
+import { nombreVisible } from '../types'
 
 /* ------------------------------------------------------------------ */
 /* Catálogo del formato DM-MTT-001                                     */
@@ -597,7 +598,7 @@ export function RevisionFormPage() {
               <span>
                 Equipo identificado por QR:{' '}
                 <span className="font-mono font-bold">{equipo.codigo}</span> ·{' '}
-                {equipo.nombre}
+                {nombreVisible(equipo)}
               </span>
             </div>
           )
@@ -611,7 +612,7 @@ export function RevisionFormPage() {
             >
               {equipos.map((eq) => (
                 <option key={eq.id} value={eq.id}>
-                  {eq.codigo} · {eq.nombre}
+                  {eq.codigo} · {nombreVisible(eq)}
                 </option>
               ))}
             </select>

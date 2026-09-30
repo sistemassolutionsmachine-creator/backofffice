@@ -10,7 +10,7 @@ import {
   sinContenido,
   type Peticion,
 } from '../lib/http.js'
-import type { Equipo } from '../types.js'
+import type { Empresa, Equipo } from '../types.js'
 
 function indices(eq: Equipo) {
   return {
@@ -19,6 +19,47 @@ function indices(eq: Equipo) {
     GSI2PK: 'T#EQUIPO',
     GSI2SK: eq.codigo,
   }
+}
+
+/** Los guiones de la hoja de cálculo significan "no aplica". */
+function texto(valor: unknown): string {
+  const t = String(valor ?? '').trim()
+  return t === '-' || t === '--' || t === 'N/A' ? '' : t
+}
+
+/** Normaliza el código: sin espacios y en mayúsculas, como en la etiqueta. */
+function normalizarCodigo(valor: unknown): string {
+  return texto(valor).replace(/\s+/g, '').toUpperCase()
+}
+
+function armarEquipo(datos: Partial<Equipo>, empresaId: string, id?: string): Equipo {
+  return {
+    id: id ?? nuevoId('eq'),
+    empresaId,
+    codigo: normalizarCodigo(datos.codigo),
+    sistema: texto(datos.sistema),
+    tipo: texto(datos.tipo),
+    nombre: texto(datos.nombre),
+    serial: texto(datos.serial),
+    ubicacion: texto(datos.ubicacion),
+    zona: texto(datos.zona),
+    marca: texto(datos.marca),
+    modelo: texto(datos.modelo),
+    caudal: texto(datos.caudal),
+    capacidad: texto(datos.capacidad),
+    tension: texto(datos.tension),
+    corriente: texto(datos.corriente),
+    estado: datos.estado ?? 'operativo',
+    ultimaRevision: datos.ultimaRevision ?? null,
+  }
+}
+
+/** Devuelve el motivo por el que la ficha no es válida, o null si lo es. */
+function motivoInvalido(eq: Equipo): string | null {
+  if (!eq.codigo) return 'Falta el código QR'
+  if (!eq.tipo) return 'Falta el tipo de equipo'
+  if (!eq.ubicacion) return 'Falta la ubicación'
+  return null
 }
 
 export async function listar(req: Peticion) {
@@ -42,13 +83,13 @@ export async function obtener(req: Peticion, id: string) {
   return ok(limpiar(equipo))
 }
 
-/** Resolución del QR: /api/equipos/codigo/SRV-001 */
+/** Resolución del QR: /api/equipos/codigo/IFF_MPORTH_1 */
 export async function porCodigo(req: Peticion, codigo: string) {
   const auth = exigir(req)
   const [equipo] = await query<Equipo>({
     index: 'GSI2',
     pk: 'T#EQUIPO',
-    sk: codigo.toUpperCase(),
+    sk: normalizarCodigo(codigo),
     exacto: true,
   })
   if (!equipo) throw noEncontrado(`No existe un equipo con el código ${codigo}`)
@@ -58,36 +99,20 @@ export async function porCodigo(req: Peticion, codigo: string) {
 
 export async function crear(req: Peticion) {
   exigir(req, 'admin')
-  const datos = cuerpo<Omit<Equipo, 'id'>>(req)
-
-  if (!datos.codigo?.trim()) throw malaPeticion('El código del equipo es obligatorio')
-  if (!datos.nombre?.trim()) throw malaPeticion('El nombre del equipo es obligatorio')
+  const datos = cuerpo<Partial<Equipo>>(req)
   if (!datos.empresaId) throw malaPeticion('Debe indicar la empresa del equipo')
 
-  const codigo = datos.codigo.trim().toUpperCase()
+  const equipo = armarEquipo(datos, datos.empresaId)
+  const motivo = motivoInvalido(equipo)
+  if (motivo) throw malaPeticion(motivo)
+
   const [existente] = await query<Equipo>({
     index: 'GSI2',
     pk: 'T#EQUIPO',
-    sk: codigo,
+    sk: equipo.codigo,
     exacto: true,
   })
-  if (existente) throw malaPeticion(`Ya existe un equipo con el código ${codigo}`)
-
-  const equipo: Equipo = {
-    id: nuevoId('eq'),
-    empresaId: datos.empresaId,
-    codigo,
-    nombre: datos.nombre.trim(),
-    tipo: datos.tipo ?? '',
-    marca: datos.marca ?? '',
-    modelo: datos.modelo ?? '',
-    serial: datos.serial ?? '',
-    ubicacion: datos.ubicacion ?? '',
-    fechaInstalacion: datos.fechaInstalacion ?? new Date().toISOString().slice(0, 10),
-    estado: datos.estado ?? 'operativo',
-    ultimaRevision: null,
-    responsable: datos.responsable ?? '',
-  }
+  if (existente) throw malaPeticion(`Ya existe un equipo con el código ${equipo.codigo}`)
 
   await put({ ...k.equipo(equipo.id), ...indices(equipo), ...equipo })
   return creado(equipo)
@@ -99,27 +124,18 @@ export async function actualizar(req: Peticion, id: string) {
   if (!actual) throw noEncontrado('Equipo no encontrado')
 
   const datos = cuerpo<Partial<Equipo>>(req)
-  const fusionado: Equipo = {
-    ...actual,
-    ...datos,
+  const fusionado = armarEquipo(
+    { ...actual, ...datos },
+    datos.empresaId ?? actual.empresaId,
     id,
-    codigo: (datos.codigo ?? actual.codigo).trim().toUpperCase(),
-  }
+  )
 
-  await update(k.equipo(id), {
-    empresaId: fusionado.empresaId,
-    codigo: fusionado.codigo,
-    nombre: fusionado.nombre,
-    tipo: fusionado.tipo,
-    marca: fusionado.marca,
-    modelo: fusionado.modelo,
-    serial: fusionado.serial,
-    ubicacion: fusionado.ubicacion,
-    fechaInstalacion: fusionado.fechaInstalacion,
-    estado: fusionado.estado,
-    responsable: fusionado.responsable,
-    ...indices(fusionado),
-  })
+  const motivo = motivoInvalido(fusionado)
+  if (motivo) throw malaPeticion(motivo)
+
+  const { id: _id, ...campos } = fusionado
+  void _id
+  await update(k.equipo(id), { ...campos, ...indices(fusionado) })
   return ok(fusionado)
 }
 
@@ -127,4 +143,115 @@ export async function eliminar(req: Peticion, id: string) {
   exigir(req, 'admin')
   await remove(k.equipo(id))
   return sinContenido()
+}
+
+/* ---------- Carga masiva ---------- */
+
+interface CuerpoImportacion {
+  empresaId?: string
+  equipos?: Partial<Equipo>[]
+  /** Si es true, actualiza los equipos cuyo código ya exista. */
+  actualizarExistentes?: boolean
+}
+
+interface ResultadoFila {
+  fila: number
+  codigo: string
+  estado: 'creado' | 'actualizado' | 'omitido' | 'error'
+  motivo?: string
+}
+
+/**
+ * Carga un lote de equipos para una empresa.
+ *
+ * La empresa se elige en la aplicación, no viene en el archivo: así la misma
+ * plantilla sirve para cualquier cliente y no hay forma de asignar un equipo
+ * a la empresa equivocada por un error de escritura.
+ *
+ * Procesa todas las filas y devuelve el detalle de cada una: una fila con
+ * problemas no cancela el resto de la carga.
+ */
+export async function importar(req: Peticion) {
+  exigir(req, 'admin')
+  const { empresaId, equipos, actualizarExistentes } = cuerpo<CuerpoImportacion>(req)
+
+  if (!empresaId) throw malaPeticion('Debe elegir la empresa a la que pertenecen')
+  if (!Array.isArray(equipos) || equipos.length === 0) {
+    throw malaPeticion('El archivo no contiene equipos')
+  }
+  if (equipos.length > 500) {
+    throw malaPeticion('Cargue como máximo 500 equipos por archivo')
+  }
+
+  const empresa = await get<Empresa>(k.empresa(empresaId))
+  if (!empresa) throw noEncontrado('La empresa indicada no existe')
+
+  // Una sola lectura del inventario para detectar duplicados.
+  const existentes = await query<Equipo>({ index: 'GSI2', pk: 'T#EQUIPO' })
+  const porCodigoExistente = new Map(existentes.map((e) => [e.codigo, e]))
+  const vistosEnArchivo = new Set<string>()
+
+  const resultados: ResultadoFila[] = []
+
+  for (const [i, datos] of equipos.entries()) {
+    // +2 porque la primera fila del archivo son los encabezados.
+    const fila = i + 2
+    const equipo = armarEquipo(datos, empresaId)
+
+    const motivo = motivoInvalido(equipo)
+    if (motivo) {
+      resultados.push({ fila, codigo: equipo.codigo, estado: 'error', motivo })
+      continue
+    }
+
+    if (vistosEnArchivo.has(equipo.codigo)) {
+      resultados.push({
+        fila,
+        codigo: equipo.codigo,
+        estado: 'error',
+        motivo: 'El código está repetido dentro del archivo',
+      })
+      continue
+    }
+    vistosEnArchivo.add(equipo.codigo)
+
+    const previo = porCodigoExistente.get(equipo.codigo)
+    if (previo) {
+      if (!actualizarExistentes) {
+        resultados.push({
+          fila,
+          codigo: equipo.codigo,
+          estado: 'omitido',
+          motivo: 'Ya existe un equipo con este código',
+        })
+        continue
+      }
+      // Se conserva el historial: mismo identificador, estado y última visita.
+      const fusionado = armarEquipo(
+        { ...equipo, estado: previo.estado, ultimaRevision: previo.ultimaRevision },
+        empresaId,
+        previo.id,
+      )
+      await put({ ...k.equipo(previo.id), ...indices(fusionado), ...fusionado })
+      resultados.push({ fila, codigo: equipo.codigo, estado: 'actualizado' })
+      continue
+    }
+
+    await put({ ...k.equipo(equipo.id), ...indices(equipo), ...equipo })
+    resultados.push({ fila, codigo: equipo.codigo, estado: 'creado' })
+  }
+
+  const cuenta = (e: ResultadoFila['estado']) =>
+    resultados.filter((r) => r.estado === e).length
+
+  return ok({
+    empresa: empresa.nombre,
+    total: resultados.length,
+    creados: cuenta('creado'),
+    actualizados: cuenta('actualizado'),
+    omitidos: cuenta('omitido'),
+    errores: cuenta('error'),
+    // Solo se devuelve el detalle de lo que requiere atención.
+    detalle: resultados.filter((r) => r.estado === 'error' || r.estado === 'omitido'),
+  })
 }

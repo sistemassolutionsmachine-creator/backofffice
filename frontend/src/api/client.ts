@@ -102,6 +102,17 @@ export interface Invitacion {
 
 export type UsuarioCreado = Usuario & Invitacion
 
+/** Resumen de una carga masiva de equipos. */
+export interface ResultadoImportacion {
+  empresa: string
+  total: number
+  creados: number
+  actualizados: number
+  omitidos: number
+  errores: number
+  detalle: { fila: number; codigo: string; estado: string; motivo?: string }[]
+}
+
 export const api = {
   login: (usuario: string, pin: string) =>
     post<RespuestaLogin>('/auth/login', { usuario, pin }),
@@ -139,6 +150,17 @@ export const api = {
     actualizar: (id: string, datos: Partial<Equipo>) =>
       put<Equipo>(`/equipos/${id}`, datos),
     eliminar: (id: string) => del(`/equipos/${id}`),
+    /** Carga masiva. La empresa se elige aquí, no viene en el archivo. */
+    importar: (
+      empresaId: string,
+      equipos: Partial<Equipo>[],
+      actualizarExistentes: boolean,
+    ) =>
+      post<ResultadoImportacion>('/equipos/importar', {
+        empresaId,
+        equipos,
+        actualizarExistentes,
+      }),
   },
 
   /* ---------- Revisiones ---------- */

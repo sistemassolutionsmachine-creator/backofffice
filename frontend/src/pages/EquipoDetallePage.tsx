@@ -22,6 +22,7 @@ import { api } from '../api/client'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
+import { nombreVisible } from '../types'
 import type { Revision } from '../types'
 
 export function EquipoDetallePage() {
@@ -60,16 +61,25 @@ export function EquipoDetallePage() {
   }
 
   const empresa = getEmpresa(equipo.empresaId)
-  const specs: Array<[string, string]> = [
-    ['Código interno', equipo.codigo],
-    ['Tipo', equipo.tipo],
-    ['Marca', equipo.marca],
-    ['Modelo', equipo.modelo],
-    ['Serial', equipo.serial],
-    ['Instalación', formatFecha(equipo.fechaInstalacion)],
-    ['Responsable', equipo.responsable],
-    ['Última revisión', formatFecha(equipo.ultimaRevision)],
-  ]
+  // Solo se listan los campos con contenido: la ficha varía mucho entre
+  // un extractor y una condensadora.
+  const specs = (
+    [
+      ['Código QR', equipo.codigo],
+      ['Sistema', equipo.sistema],
+      ['Tipo de equipo', equipo.tipo],
+      ['Denominación', equipo.nombre],
+      ['Serial', equipo.serial],
+      ['Zona', equipo.zona],
+      ['Marca', equipo.marca],
+      ['Modelo', equipo.modelo],
+      ['Caudal', equipo.caudal],
+      ['Capacidad', equipo.capacidad],
+      ['Tensión', equipo.tension],
+      ['Corriente', equipo.corriente],
+      ['Última revisión', formatFecha(equipo.ultimaRevision)],
+    ] as Array<[string, string]>
+  ).filter(([, valor]) => valor && valor !== '—')
 
   return (
     <div className="space-y-5">
@@ -86,7 +96,7 @@ export function EquipoDetallePage() {
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
-              {equipo.nombre}
+              {nombreVisible(equipo)}
             </h1>
             <EstadoEquipoBadge estado={equipo.estado} />
           </div>

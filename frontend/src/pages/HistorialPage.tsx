@@ -13,6 +13,7 @@ import {
 import { api } from '../api/client'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
+import { nombreVisible } from '../types'
 import type { Revision, TipoServicio } from '../types'
 
 const filtros: Array<{ id: TipoServicio | 'todos'; label: string }> = [
@@ -56,7 +57,7 @@ export function HistorialPage() {
       const eq = getEquipo(r.equipoId)
       if (filtro !== 'todos' && r.tipo !== filtro) return false
       if (!q) return true
-      return [r.consecutivo, r.tecnico, r.observaciones, eq?.nombre, eq?.codigo]
+      return [r.consecutivo, r.tecnico, r.observaciones, eq?.nombre, eq?.tipo, eq?.codigo]
         .join(' ')
         .toLowerCase()
         .includes(q)
@@ -131,7 +132,7 @@ export function HistorialPage() {
                 to={`/equipos/${r.equipoId}`}
                 className="mt-1.5 block text-sm font-semibold text-zinc-900"
               >
-                {eq?.nombre}
+                {eq ? nombreVisible(eq) : "Equipo"}
               </Link>
               <p className="mt-0.5 text-xs text-zinc-500">
                 {eq ? (getEmpresa(eq.empresaId)?.nombre ?? 'Sin empresa') : ''}
@@ -179,7 +180,7 @@ export function HistorialPage() {
                       to={`/equipos/${r.equipoId}`}
                       className="font-semibold text-zinc-900 hover:text-brand-700"
                     >
-                      {eq?.nombre}
+                      {eq ? nombreVisible(eq) : "Equipo"}
                     </Link>
                     <p className="text-xs text-zinc-500">
                       <span className="font-mono">{eq?.codigo}</span>
