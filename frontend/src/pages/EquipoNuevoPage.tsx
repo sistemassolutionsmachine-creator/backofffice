@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -12,9 +12,11 @@ import {
 } from 'lucide-react'
 import { Button, Card, PageHeader } from '../components/ui'
 import { useData } from '../store/DataContext'
+import { api } from '../api/client'
 import { ContratoSelect } from '../components/ContratoSelect'
+import { SelectCreable, contarUsos, unirOpciones } from '../components/SelectCreable'
 import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
-import type { Equipo, EstadoEquipo } from '../types'
+import type { CampoCatalogo, CatalogoEquipos, Equipo, EstadoEquipo } from '../types'
 
 /* Sistemas y tipos tomados del cuadro de equipos del cliente. */
 const SISTEMAS = ['VRFSamsung', 'CHWS', 'Vent. Mecanica', 'C. Frio']
@@ -91,6 +93,44 @@ export function EquipoNuevoPage() {
     const n = equipos.filter((e) => /^AC-\d+$/i.test(e.codigo)).length
     return `AC-${String(n + 1).padStart(3, '0')}`
   }, [equipos])
+
+  // Opciones fijas que el administrador eliminó (persisten en el servidor).
+  const [ocultos, setOcultos] = useState<CatalogoEquipos['ocultos']>({ sistema: [], tipo: [] })
+  useEffect(() => {
+    api.catalogo
+      .obtener()
+      .then((c) => setOcultos(c.ocultos))
+      .catch(() => {
+        // Sin catálogo se muestra la lista completa: no impide registrar.
+      })
+  }, [])
+
+  // Lo creado al registrar un equipo queda disponible para los siguientes.
+  const sistemas = useMemo(
+    () => unirOpciones(SISTEMAS, equipos.map((e) => e.sistema), ocultos.sistema),
+    [equipos, ocultos.sistema],
+  )
+  const tiposEquipo = useMemo(
+    () => unirOpciones(TIPOS_EQUIPO, equipos.map((e) => e.tipo), ocultos.tipo),
+    [equipos, ocultos.tipo],
+  )
+  const usosSistema = useMemo(() => contarUsos(equipos.map((e) => e.sistema)), [equipos])
+  const usosTipo = useMemo(() => contarUsos(equipos.map((e) => e.tipo)), [equipos])
+
+  // Si el valor inicial fue eliminado del catálogo, se toma el primero disponible.
+  useEffect(() => {
+    if (sistemas.length && !sistemas.includes(sistema)) setSistema(sistemas[0])
+    if (tiposEquipo.length && !tiposEquipo.includes(tipo)) setTipo(tiposEquipo[0])
+    // Solo al cargar el catálogo: después, el valor elegido o creado manda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocultos])
+
+  /** Las opciones fijas se ocultan en el servidor; las recién creadas, solo aquí. */
+  const eliminarOpcion = (campo: CampoCatalogo, base: string[]) => async (valor: string) => {
+    if (!base.includes(valor)) return
+    const c = await api.catalogo.eliminar(campo, valor)
+    setOcultos(c.ocultos)
+  }
 
   const codigoFinal = (codigo.trim() || codigoSugerido).toUpperCase()
   const valido = Boolean(empresaId && contratoId && tipo && ubicacion.trim())
@@ -270,30 +310,28 @@ export function EquipoNuevoPage() {
             />
           </Campo>
           <Campo etiqueta="Sistema">
-            <select
+            <SelectCreable
               value={sistema}
-              onChange={(e) => setSistema(e.target.value)}
-              className={inputCls}
-            >
-              {SISTEMAS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              onChange={setSistema}
+              opciones={sistemas}
+              conteos={usosSistema}
+              onEliminar={eliminarOpcion('sistema', SISTEMAS)}
+              ariaLabel="Sistema"
+              sustantivo="sistema"
+              placeholderBusqueda="Buscar o crear sistema…"
+            />
           </Campo>
           <Campo etiqueta="Tipo de equipo">
-            <select
+            <SelectCreable
               value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
-              className={inputCls}
-            >
-              {TIPOS_EQUIPO.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+              onChange={setTipo}
+              opciones={tiposEquipo}
+              conteos={usosTipo}
+              onEliminar={eliminarOpcion('tipo', TIPOS_EQUIPO)}
+              ariaLabel="Tipo de equipo"
+              sustantivo="tipo"
+              placeholderBusqueda="Buscar o crear tipo de equipo…"
+            />
           </Campo>
           <Campo etiqueta="Denominación" ayuda="Como aparece en planos, si la tiene">
             <input

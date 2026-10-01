@@ -11,6 +11,13 @@ export interface Empresa {
   ciudad: string
 }
 
+export type CampoCatalogo = 'sistema' | 'tipo'
+
+/** Opciones fijas del catálogo que el administrador eliminó. */
+export interface CatalogoEquipos {
+  ocultos: Record<CampoCatalogo, string[]>
+}
+
 /**
  * Contrato de mantenimiento con una empresa.
  *

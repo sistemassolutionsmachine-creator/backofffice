@@ -20,6 +20,19 @@ export interface Empresa {
  * Una empresa puede tener varios contratos a lo largo del tiempo; cada
  * equipo queda demarcado bajo el contrato con el que entró.
  */
+/** Campos de la ficha del equipo con lista de opciones administrable. */
+export type CampoCatalogo = 'sistema' | 'tipo'
+
+/**
+ * Opciones del catálogo base que el administrador eliminó.
+ *
+ * Los valores que usan los equipos salen del propio inventario; aquí solo se
+ * guardan las opciones fijas descartadas, para que dejen de ofrecerse.
+ */
+export interface CatalogoEquipos {
+  ocultos: Record<CampoCatalogo, string[]>
+}
+
 export interface Contrato {
   id: string
   empresaId: string

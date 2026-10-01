@@ -1,4 +1,6 @@
 import type {
+  CampoCatalogo,
+  CatalogoEquipos,
   Contrato,
   Empresa,
   Equipo,
@@ -138,6 +140,14 @@ export const api = {
     actualizar: (id: string, datos: Partial<Empresa>) =>
       put<Empresa>(`/empresas/${id}`, datos),
     eliminar: (id: string) => del(`/empresas/${id}`),
+  },
+
+  /* ---------- Catálogo de sistemas y tipos ---------- */
+  catalogo: {
+    obtener: () => get<CatalogoEquipos>('/catalogo'),
+    /** El servidor lo rechaza si algún equipo usa el valor. */
+    eliminar: (campo: CampoCatalogo, valor: string) =>
+      post<CatalogoEquipos>('/catalogo/eliminar', { campo, valor }),
   },
 
   /* ---------- Contratos ---------- */

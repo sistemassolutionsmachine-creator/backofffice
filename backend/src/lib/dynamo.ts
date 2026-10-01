@@ -33,6 +33,7 @@ export const ddb = DynamoDBDocumentClient.from(client, {
 export const k = {
   empresa: (id: string) => ({ PK: `EMPRESA#${id}`, SK: 'META' }),
   contrato: (id: string) => ({ PK: `CONTRATO#${id}`, SK: 'META' }),
+  catalogo: () => ({ PK: 'CATALOGO#EQUIPOS', SK: 'META' }),
   equipo: (id: string) => ({ PK: `EQUIPO#${id}`, SK: 'META' }),
   usuario: (id: string) => ({ PK: `USUARIO#${id}`, SK: 'META' }),
   revision: (equipoId: string, fecha: string, id: string) => ({

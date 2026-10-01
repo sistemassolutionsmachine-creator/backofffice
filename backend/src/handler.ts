@@ -12,6 +12,7 @@ import {
   type Respuesta,
 } from './lib/http.js'
 import * as auth from './routes/auth.js'
+import * as catalogo from './routes/catalogo.js'
 import * as contratos from './routes/contratos.js'
 import * as empresas from './routes/empresas.js'
 import * as equipos from './routes/equipos.js'
@@ -49,6 +50,11 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       if (a && m === 'GET') return empresas.obtener(req, a)
       if (a && (m === 'PUT' || m === 'PATCH')) return empresas.actualizar(req, a)
       if (a && m === 'DELETE') return empresas.eliminar(req, a)
+      break
+
+    case 'catalogo':
+      if (!a && m === 'GET') return catalogo.obtener(req)
+      if (a === 'eliminar' && m === 'POST') return catalogo.eliminar(req)
       break
 
     case 'contratos':
