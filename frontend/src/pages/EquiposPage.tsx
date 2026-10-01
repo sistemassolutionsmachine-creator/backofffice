@@ -5,10 +5,8 @@ import {
   ArrowLeft,
   Building2,
   Camera,
-  ChevronLeft,
   ChevronRight,
   FileText,
-  MapPin,
   Plus,
   Server,
   Upload,
@@ -23,6 +21,8 @@ import {
   cx,
 } from '../components/ui'
 import { useData } from '../store/DataContext'
+import { EquipoCard, PESO_ESTADO as PESO } from '../components/EquipoCard'
+import { Paginacion } from '../components/Paginacion'
 import { api } from '../api/client'
 import { fechaCorta } from '../utils/fechas'
 import { nombreVisible } from '../types'
@@ -37,118 +37,7 @@ const ESTADOS: Record<
   fuera_servicio: { label: 'Fuera de servicio', dot: 'bg-brand-600', text: 'text-brand-700' },
 }
 
-/* Lo que falla va primero */
-const PESO: Record<EstadoEquipo, number> = {
-  fuera_servicio: 0,
-  mantenimiento: 1,
-  operativo: 2,
-}
-
 const POR_PAGINA = 25
-
-function footerDe(eq: Equipo): { label: string; valor: string } {
-  if (eq.estado === 'fuera_servicio')
-    return { label: 'Correctivo en curso', valor: `desde ${fechaCorta(eq.ultimaRevision)}` }
-  if (eq.estado === 'mantenimiento')
-    return { label: 'Revisión en curso', valor: fechaCorta(eq.ultimaRevision) }
-  if (!eq.ultimaRevision) return { label: 'Última revisión', valor: '—' }
-  return { label: 'Última revisión', valor: fechaCorta(eq.ultimaRevision) }
-}
-
-function EquipoCard({
-  eq,
-  nRevisiones,
-  empresaNombre,
-  contratoNombre,
-  indice,
-}: {
-  eq: Equipo
-  nRevisiones: number
-  /** Se muestra al buscar en todo el inventario, para ubicar el resultado. */
-  empresaNombre?: string
-  contratoNombre?: string
-  /** Posición en la cuadrícula: define el retraso de la animación de entrada. */
-  indice: number
-}) {
-  const est = ESTADOS[eq.estado]
-  const footer = footerDe(eq)
-  return (
-    <Link
-      to={`/equipos/${eq.id}`}
-      viewTransition
-      className="anim-entrada block"
-      style={{ animationDelay: `${Math.min(indice, 12) * 35}ms` }}
-    >
-      <Card
-        className={cx(
-          'group flex h-full flex-col p-4 transition-all duration-200',
-          'hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg',
-          eq.estado === 'fuera_servicio' &&
-            'border-brand-300 ring-1 ring-brand-200 hover:border-brand-400',
-        )}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate rounded-md bg-zinc-100 px-2 py-1 font-mono text-[11px] font-bold text-zinc-600">
-            {eq.codigo}
-          </span>
-          <span
-            className={cx(
-              'flex shrink-0 items-center gap-1.5 text-[11px] font-semibold',
-              est.text,
-            )}
-          >
-            <span className={cx('size-1.5 rounded-full', est.dot)} />
-            {est.label}
-          </span>
-        </div>
-
-        <p className="mt-3 line-clamp-2 text-sm leading-snug font-bold text-zinc-900 transition-colors group-hover:text-brand-700">
-          {nombreVisible(eq)}
-        </p>
-        <p className="mt-1.5 flex items-center gap-1 truncate text-xs text-zinc-500">
-          <MapPin className="size-3 shrink-0 text-zinc-400" />
-          <span className="truncate">{eq.ubicacion}</span>
-        </p>
-        {(eq.marca || eq.modelo) && (
-          <p className="mt-0.5 truncate text-xs text-zinc-400">
-            {[eq.marca, eq.modelo].filter(Boolean).join(' · ')}
-          </p>
-        )}
-        {empresaNombre && (
-          <p className="mt-1.5 truncate text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
-            {empresaNombre}
-          </p>
-        )}
-
-        <p className="mt-3 mb-4 truncate rounded-lg bg-zinc-50 px-2 py-1.5 text-xs font-medium text-zinc-600" title={contratoNombre}>
-          {contratoNombre ?? 'Pendiente de contrato'}
-        </p>
-        <div className="mt-auto flex items-end justify-between gap-2 border-t border-zinc-100 pt-3">
-          <span>
-            <span className="block text-[10px] tracking-wide text-zinc-400 uppercase">
-              {footer.label}
-            </span>
-            <span
-              className={cx(
-                'block text-xs font-bold',
-                eq.estado === 'operativo' ? 'text-zinc-900' : est.text,
-              )}
-            >
-              {footer.valor}
-            </span>
-          </span>
-          <span
-            className="flex items-center gap-1 text-xs text-zinc-400"
-            title={`${nRevisiones} ${nRevisiones === 1 ? 'revisión registrada' : 'revisiones registradas'}`}
-          >
-            <FileText className="size-3.5" />
-            {nRevisiones}
-          </span>
-        </div>
-      </Card>
-    </Link>
-  )
-}
 
 function ActividadReciente({
   revisiones,
@@ -342,7 +231,8 @@ export function EquiposPage() {
         .filter((e) => filtro === 'todos' || e.estado === filtro)
         .sort(
           (a, b) =>
-            PESO[a.estado] - PESO[b.estado] || a.codigo.localeCompare(b.codigo),
+            PESO[a.estado] - PESO[b.estado] ||
+            a.codigo.localeCompare(b.codigo, 'es', { numeric: true }),
         ),
     [ambito, filtro],
   )
@@ -561,47 +451,19 @@ export function EquiposPage() {
           {/* Cuadrícula paginada: dentro de una empresa o al buscar */}
           {mostrarLista && (
             <>
-              <div className="flex items-center justify-between px-0.5">
-                <p className="text-xs font-semibold text-zinc-500">
-                  {resultado.length === 0
-                    ? 'Sin resultados'
-                    : `${paginaActual * POR_PAGINA + 1}–${Math.min(
-                        (paginaActual + 1) * POR_PAGINA,
-                        resultado.length,
-                      )} de ${resultado.length} equipos`}
-                </p>
-                {totalPaginas > 1 && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      aria-label="Página anterior"
-                      disabled={paginaActual === 0}
-                      onClick={() => setPagina(paginaActual - 1)}
-                      className="rounded-lg bg-white p-1.5 text-zinc-500 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 disabled:opacity-30"
-                    >
-                      <ChevronLeft className="size-4" />
-                    </button>
-                    <span className="px-1.5 text-xs font-semibold text-zinc-600 tabular-nums">
-                      {paginaActual + 1} / {totalPaginas}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Página siguiente"
-                      disabled={paginaActual >= totalPaginas - 1}
-                      onClick={() => setPagina(paginaActual + 1)}
-                      className="rounded-lg bg-white p-1.5 text-zinc-500 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 disabled:opacity-30"
-                    >
-                      <ChevronRight className="size-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
+              <Paginacion
+                pagina={paginaActual}
+                total={resultado.length}
+                porPagina={POR_PAGINA}
+                onCambiar={setPagina}
+              />
 
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {visibles.map((eq, i) => (
                   <EquipoCard
                     key={eq.id}
                     eq={eq}
+                    to={`/equipos/${eq.id}`}
                     indice={i}
                     contratoNombre={contratos.find((c) => c.id === eq.contratoId)?.codigo}
                     nRevisiones={revisionesPorEquipo.get(eq.id) ?? 0}
