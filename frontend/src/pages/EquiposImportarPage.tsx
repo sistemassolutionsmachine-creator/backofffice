@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { Button, Card, PageHeader, cx } from '../components/ui'
 import { useData } from '../store/DataContext'
+import { ContratoSelect } from '../components/ContratoSelect'
 import { api, type ResultadoImportacion } from '../api/client'
 import {
   COLUMNAS,
@@ -24,10 +25,12 @@ const inputCls =
 
 export function EquiposImportarPage() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const { empresas, recargar } = useData()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const [empresaId, setEmpresaId] = useState('')
+  const [empresaId, setEmpresaId] = useState(params.get('empresa') ?? '')
+  const [contratoId, setContratoId] = useState(params.get('contrato') ?? '')
   const [archivo, setArchivo] = useState<File | null>(null)
   const [lectura, setLectura] = useState<LecturaArchivo | null>(null)
   const [actualizarExistentes, setActualizarExistentes] = useState(false)
@@ -62,7 +65,7 @@ export function EquiposImportarPage() {
   }
 
   const importar = async () => {
-    if (!lectura || !empresaId || cargando) return
+    if (!lectura || !empresaId || !contratoId || cargando) return
     setCargando(true)
     setError(null)
     try {
@@ -70,6 +73,7 @@ export function EquiposImportarPage() {
         empresaId,
         lectura.filas.map((f) => f.datos),
         actualizarExistentes,
+        contratoId,
       )
       setResultado(r)
       await recargar()
@@ -221,7 +225,7 @@ export function EquiposImportarPage() {
         </p>
         <select
           value={empresaId}
-          onChange={(e) => setEmpresaId(e.target.value)}
+          onChange={(e) => { setEmpresaId(e.target.value); setContratoId('') }}
           className={cx(inputCls, 'mt-3')}
         >
           <option value="">Seleccione una empresa…</option>
@@ -231,6 +235,7 @@ export function EquiposImportarPage() {
             </option>
           ))}
         </select>
+        <div className="mt-4"><ContratoSelect empresaId={empresaId} value={contratoId} onChange={setContratoId} /></div>
       </Card>
 
       {/* Paso 3: archivo */}
@@ -349,14 +354,14 @@ export function EquiposImportarPage() {
               </span>
               <br />
               Si un código QR ya está registrado, se actualizan sus datos
-              conservando su historial de revisiones. Sin marcar, esas filas se
+              conservando su contrato original e historial de revisiones. Sin marcar, esas filas se
               omiten.
             </span>
           </label>
 
           <Button
             className="mt-4 w-full py-3"
-            disabled={cargando}
+            disabled={cargando || !contratoId}
             onClick={() => void importar()}
           >
             <Upload className="size-4" />

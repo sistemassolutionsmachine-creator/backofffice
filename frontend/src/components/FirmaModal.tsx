@@ -3,6 +3,7 @@ import { Check, PenLine, X } from 'lucide-react'
 import { Button, cx } from './ui'
 import {
   ESTILOS_FIRMA,
+  getFirma,
   setFirma,
   type EstiloFirma,
   type Firma,
@@ -35,18 +36,30 @@ export function FirmaModal({
   nombreInicial = '',
   textoBoton = 'Guardar mi firma',
 }: Props) {
-  const [nombre, setNombre] = useState(nombreInicial)
-  const [cargo, setCargo] = useState('')
-  const [estilo, setEstilo] = useState<EstiloFirma | null>(null)
+  const [guardada] = useState(() => getFirma())
+  const [nombre, setNombre] = useState(guardada?.nombre ?? nombreInicial)
+  const [cargo, setCargo] = useState(guardada?.cargo ?? '')
+  const [estilo, setEstilo] = useState<EstiloFirma | null>(guardada?.estilo ?? null)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const valido =
     nombre.trim().length >= 3 && estilo !== null && (!pedirCargo || cargo.trim().length >= 2)
 
-  const guardar = () => {
-    if (!valido || !estilo) return
+  const guardar = async () => {
+    if (!valido || !estilo || guardando) return
     const firma: Firma = { nombre: nombre.trim(), estilo, cargo: cargo.trim() }
-    setFirma(firma)
-    onGuardar(firma)
+    setGuardando(true)
+    setError(null)
+    try {
+      // Queda en el perfil del usuario: no se vuelve a pedir en cada sesión.
+      await setFirma(firma)
+      onGuardar(firma)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar la firma')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   return (
@@ -66,6 +79,8 @@ export function FirmaModal({
             <button
               type="button"
               onClick={onCerrar}
+              disabled={guardando}
+              aria-label="Cerrar firma"
               className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
             >
               <X className="size-4" />
@@ -139,9 +154,11 @@ export function FirmaModal({
           </div>
         </div>
 
-        <Button onClick={guardar} disabled={!valido} className="mt-5 w-full py-3">
+        {guardada && <p className="mt-4 text-xs text-zinc-500">Su firma guardada está lista. Puede reutilizarla o modificarla.</p>}
+        {error && <p role="alert" className="mt-4 text-sm text-brand-700">{error}</p>}
+        <Button onClick={() => void guardar()} disabled={!valido || guardando} className="mt-5 w-full py-3">
           <PenLine className="size-4" />
-          {textoBoton}
+          {guardando ? 'Guardando…' : textoBoton}
         </Button>
       </div>
     </div>

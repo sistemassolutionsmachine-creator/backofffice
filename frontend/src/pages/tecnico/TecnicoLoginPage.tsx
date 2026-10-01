@@ -5,10 +5,12 @@ import { Button } from '../../components/ui'
 import { PinInput, PIN_LARGO } from '../../components/PinInput'
 import { cerrarSesion, iniciarSesion } from '../../utils/auth'
 import { api } from '../../api/client'
+import { useData } from '../../store/DataContext'
 
 export function TecnicoLoginPage() {
   const navigate = useNavigate()
   const { codigo } = useParams()
+  const { recargar } = useData()
   const [usuario, setUsuario] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -24,6 +26,8 @@ export function TecnicoLoginPage() {
         cerrarSesion()
         throw new Error('Este acceso es exclusivo para técnicos.')
       }
+      // Con la sesión recién creada, se cargan los datos del portal.
+      void recargar()
 
       // Si se llegó escaneando un QR, se abre el reporte de ese equipo.
       if (codigo) {

@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 /**
@@ -9,7 +9,12 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 export const BUCKET = process.env.BUCKET_REPORTES ?? ''
 
-const s3 = new S3Client({})
+export const s3 = new S3Client({})
+
+export async function comprobarPdf(clave: string) {
+  const archivo = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: clave }))
+  return archivo.ContentType === 'application/pdf' && (archivo.ContentLength ?? 0) > 0
+}
 
 const MINUTOS = 60
 

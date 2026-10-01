@@ -1,4 +1,5 @@
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb'
+import { randomUUID } from 'node:crypto'
 import {
   TABLE,
   ddb,
@@ -12,6 +13,7 @@ import {
 } from '../lib/dynamo.js'
 import {
   creado,
+  ErrorHttp,
   cuerpo,
   exigir,
   malaPeticion,
@@ -20,8 +22,70 @@ import {
   prohibido,
   type Peticion,
 } from '../lib/http.js'
-import { claveEvidencia, clavePdf, urlDeDescarga, urlDeSubida } from '../lib/s3.js'
-import type { Equipo, Revision } from '../types.js'
+import { claveEvidencia, clavePdf, comprobarPdf, urlDeDescarga, urlDeSubida } from '../lib/s3.js'
+import type { EstadoEquipo, Equipo, Revision } from '../types.js'
+
+const ESTADOS_EQUIPO: EstadoEquipo[] = ['operativo', 'mantenimiento', 'fuera_servicio']
+
+/** undefined si no viene en la petición; error si viene con un valor desconocido. */
+function leerEstadoEquipo(valor: unknown): EstadoEquipo | null | undefined {
+  if (valor === undefined) return undefined
+  if (valor === null) return null
+  if (!ESTADOS_EQUIPO.includes(valor as EstadoEquipo)) {
+    throw malaPeticion('Estado del equipo inválido')
+  }
+  return valor as EstadoEquipo
+}
+
+/**
+ * Al cerrar un servicio, el equipo toma el estado en que lo dejó el técnico.
+ * Solo si es su intervención más reciente: completar un reporte atrasado no
+ * debe pisar lo que registró una visita posterior.
+ */
+async function reflejarEnEquipo(revision: Revision) {
+  if (revision.estado !== 'completado' || !revision.estadoEquipo) return
+  const equipo = await get<Equipo>(k.equipo(revision.equipoId))
+  if (!equipo || (equipo.ultimaRevision && revision.fecha < equipo.ultimaRevision)) return
+  await update(k.equipo(equipo.id), { estado: revision.estadoEquipo })
+}
+
+/** Escritura condicional: un PDF antiguo nunca puede publicar sobre firmas nuevas. */
+async function guardarVersion(actual: Revision, patch: Record<string, unknown>) {
+  const campos = Object.entries(patch).filter(([, v]) => v !== undefined)
+  const names: Record<string, string> = { '#version': 'documentoVersion' }
+  const values: Record<string, unknown> = { ':version': actual.documentoVersion ?? 0 }
+  campos.forEach(([campo, valor], i) => { names[`#c${i}`] = campo; values[`:v${i}`] = valor })
+  try {
+    const r = await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: k.revision(actual.equipoId, actual.fecha, actual.id),
+      UpdateExpression: `SET ${campos.map((_, i) => `#c${i} = :v${i}`).join(', ')}`,
+      ConditionExpression: actual.documentoVersion === undefined
+        ? 'attribute_exists(PK) AND attribute_not_exists(#version)'
+        : '#version = :version',
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: actual.documentoVersion === undefined
+        ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== ':version'))
+        : values,
+      ReturnValues: 'ALL_NEW',
+    }))
+    return limpiar(r.Attributes as unknown as Revision)
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ConditionalCheckFailedException') {
+      throw new ErrorHttp(409, 'El reporte cambió. Vuelva a intentar con la versión actualizada.')
+    }
+    throw e
+  }
+}
+
+async function buscarRevision(req: Peticion, equipoId: string, revisionId: string) {
+  const auth = exigir(req)
+  const lista = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
+  const revision = lista.find((r) => r.id === revisionId)
+  if (!revision) throw noEncontrado('Revisión no encontrada')
+  if (auth.rol === 'cliente' && (!auth.empresaId || revision.empresaId !== auth.empresaId)) throw prohibido()
+  return revision
+}
 
 /**
  * Consecutivo irrepetible (SM-2026-00153).
@@ -95,7 +159,8 @@ export async function obtener(req: Peticion, equipoId: string, revisionId: strin
   const [fotosEntrada, fotosSalida, pdfUrl] = await Promise.all([
     Promise.all(revision.fotosEntrada.map(urlDeDescarga)),
     Promise.all(revision.fotosSalida.map(urlDeDescarga)),
-    revision.pdfKey ? urlDeDescarga(revision.pdfKey) : Promise.resolve(null),
+    revision.pdfKey && revision.pdfVersion === (revision.documentoVersion ?? 0)
+      ? urlDeDescarga(revision.pdfKey) : Promise.resolve(null),
   ])
 
   return ok({ ...limpiar(revision), urls: { fotosEntrada, fotosSalida, pdf: pdfUrl } })
@@ -137,6 +202,8 @@ export async function crear(req: Peticion) {
     fotosEntrada: datos.fotosEntrada ?? [],
     fotosSalida: datos.fotosSalida ?? [],
     pdfKey: null,
+    estadoEquipo: leerEstadoEquipo(datos.estadoEquipo) ?? null,
+    documentoVersion: 1,
     firmaTecnico: datos.firmaTecnico ?? null,
     firmaCliente: null,
   }
@@ -152,6 +219,7 @@ export async function crear(req: Peticion) {
 
   // El equipo refleja siempre su última intervención.
   await update(k.equipo(equipo.id), { ultimaRevision: fecha })
+  await reflejarEnEquipo(revision)
 
   return creado(revision)
 }
@@ -161,6 +229,7 @@ export async function actualizar(req: Peticion, equipoId: string, revisionId: st
   const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
   const actual = revisiones.find((r) => r.id === revisionId)
   if (!actual) throw noEncontrado('Revisión no encontrada')
+  if (actual.firmaCliente) throw malaPeticion('No se puede editar un reporte firmado por el cliente')
 
   const datos = cuerpo<Partial<Revision>>(req)
   const patch: Record<string, unknown> = {
@@ -175,13 +244,19 @@ export async function actualizar(req: Peticion, equipoId: string, revisionId: st
     observaciones: datos.observaciones,
     fotosEntrada: datos.fotosEntrada,
     fotosSalida: datos.fotosSalida,
-    pdfKey: datos.pdfKey,
     firmaTecnico: datos.firmaTecnico,
-    firmaCliente: datos.firmaCliente,
+    estadoEquipo: leerEstadoEquipo(datos.estadoEquipo),
+    documentoVersion: (actual.documentoVersion ?? 0) + 1,
   }
 
-  await update(k.revision(equipoId, actual.fecha, revisionId), patch)
-  return ok({ ...actual, ...datos })
+  const completa = datos.estado === 'completado' && actual.estado !== 'completado'
+  if (completa && !(patch.estadoEquipo ?? actual.estadoEquipo)) {
+    throw malaPeticion('Indique en qué estado queda el equipo antes de completar el reporte')
+  }
+
+  const guardada = await guardarVersion(actual, patch)
+  await reflejarEnEquipo(guardada)
+  return ok(guardada)
 }
 
 /* ---------- Evidencias y PDF ---------- */
@@ -192,6 +267,8 @@ interface CuerpoSubida {
   momento?: 'entrada' | 'salida'
   nombre?: string
   contentType?: string
+  version?: number
+  clave?: string
 }
 
 /** Devuelve una URL prefirmada para que el navegador suba la foto directo a S3. */
@@ -225,21 +302,35 @@ export async function urlSubidaEvidencia(req: Peticion) {
  * al firmar, el documento se rehace para que incluya su firma.
  */
 export async function urlSubidaPdf(req: Peticion) {
-  const auth = exigir(req, 'tecnico', 'admin', 'cliente')
-  const { equipoId, revisionId } = cuerpo<CuerpoSubida>(req)
+  exigir(req, 'tecnico', 'admin', 'cliente')
+  const { equipoId, revisionId, version } = cuerpo<CuerpoSubida>(req)
   if (!equipoId || !revisionId) throw malaPeticion('Faltan datos del reporte')
 
-  const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
-  const revision = revisiones.find((r) => r.id === revisionId)
-  if (!revision) throw noEncontrado('Revisión no encontrada')
-
-  if (auth.rol === 'cliente' && revision.empresaId !== auth.empresaId) throw prohibido()
-
-  const clave = clavePdf(revision.empresaId, revision.consecutivo)
+  const revision = await buscarRevision(req, equipoId, revisionId)
+  if (version !== (revision.documentoVersion ?? 0)) throw new ErrorHttp(409, 'El reporte cambió; genere nuevamente el PDF')
+  if (revision.estado !== 'completado') throw malaPeticion('El reporte aún no está completo')
+  const clave = `${clavePdf(revision.empresaId, revision.consecutivo)}/${version}/${randomUUID()}.pdf`
   const url = await urlDeSubida(clave, 'application/pdf')
-  await update(k.revision(equipoId, revision.fecha, revisionId), { pdfKey: clave })
 
   return ok({ url, clave })
+}
+
+/** Se publica después del PUT a S3, nunca al emitir la URL de subida. */
+export async function confirmarPdf(req: Peticion) {
+  exigir(req, 'tecnico', 'admin', 'cliente')
+  const { equipoId, revisionId, version, clave } = cuerpo<CuerpoSubida>(req)
+  if (!equipoId || !revisionId || typeof clave !== 'string') throw malaPeticion('Faltan datos del PDF')
+  const revision = await buscarRevision(req, equipoId, revisionId)
+  if (version !== (revision.documentoVersion ?? 0)) throw new ErrorHttp(409, 'El reporte tiene una firma o contenido más reciente')
+  const prefijo = `${clavePdf(revision.empresaId, revision.consecutivo)}/${version}/`
+  if (!clave.startsWith(prefijo) || !/^[\da-f-]{36}\.pdf$/.test(clave.slice(prefijo.length))) throw malaPeticion('La clave no corresponde al reporte')
+  try {
+    if (!await comprobarPdf(clave)) throw malaPeticion('El PDF subido está vacío o no es válido')
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'NotFound' || e.name === 'NoSuchKey')) throw malaPeticion('La subida del PDF aún no se ha completado')
+    throw e
+  }
+  return ok(await guardarVersion(revision, { pdfKey: clave, pdfVersion: version }))
 }
 
 /* ---------- Firma del cliente ---------- */
@@ -285,6 +376,8 @@ export async function firmarCliente(
     fecha: new Date().toISOString().slice(0, 10),
   }
 
-  await update(k.revision(equipoId, revision.fecha, revisionId), { firmaCliente })
-  return ok({ ...limpiar(revision), firmaCliente })
+  return ok(await guardarVersion(revision, {
+    firmaCliente,
+    documentoVersion: (revision.documentoVersion ?? 0) + 1,
+  }))
 }

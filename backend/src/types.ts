@@ -15,6 +15,24 @@ export interface Empresa {
 }
 
 /**
+ * Contrato de mantenimiento con una empresa.
+ *
+ * Una empresa puede tener varios contratos a lo largo del tiempo; cada
+ * equipo queda demarcado bajo el contrato con el que entró.
+ */
+export interface Contrato {
+  id: string
+  empresaId: string
+  /** Identificador corto del contrato: CT-2026-A1B2. */
+  codigo: string
+  /** Descripción: "Mantenimiento HVAC 2026". */
+  nombre: string
+  fechaInicio: string
+  fechaFin: string | null
+  estado: 'activo' | 'finalizado'
+}
+
+/**
  * Ficha de un equipo.
  *
  * Los campos replican el cuadro de equipos que maneja la empresa, de modo que
@@ -23,6 +41,8 @@ export interface Empresa {
 export interface Equipo {
   id: string
   empresaId: string
+  /** Contrato bajo el que entró el equipo. Null en inventarios antiguos. */
+  contratoId: string | null
   /** Identificador impreso en la etiqueta QR. Único en todo el inventario. */
   codigo: string
   /** Sistema al que pertenece: VRF Samsung, CHWS, Ventilación mecánica… */
@@ -64,6 +84,13 @@ export interface Usuario {
   empresaId?: string
   estado: 'activo' | 'inactivo'
   ultimoAcceso: string | null
+  /** Administrador protegido: solo otro superadministrador puede gestionarlo. */
+  superadmin?: boolean
+  /**
+   * Firma digital elegida por el usuario. Se guarda para no pedirla en cada
+   * sesión: el técnico la define una vez y firma con un toque.
+   */
+  firma?: { nombre: string; estilo: string; cargo?: string } | null
 }
 
 /**
@@ -111,6 +138,11 @@ export interface Revision {
   fotosSalida: string[]
   /** Clave S3 del PDF generado. */
   pdfKey: string | null
+  /** Estado en que el técnico dejó el equipo al cerrar el servicio. */
+  estadoEquipo?: EstadoEquipo | null
+  /** Versión del contenido y versión del PDF confirmado en S3. */
+  documentoVersion?: number
+  pdfVersion?: number
   firmaTecnico: { nombre: string; estilo: string; fecha: string } | null
   firmaCliente: {
     nombre: string

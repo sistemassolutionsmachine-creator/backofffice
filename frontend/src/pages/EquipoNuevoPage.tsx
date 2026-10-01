@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Button, Card, PageHeader } from '../components/ui'
 import { useData } from '../store/DataContext'
+import { ContratoSelect } from '../components/ContratoSelect'
 import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
 import type { Equipo, EstadoEquipo } from '../types'
 
@@ -65,6 +66,7 @@ export function EquipoNuevoPage() {
   const qrRef = useRef<HTMLDivElement>(null)
 
   const [empresaId, setEmpresaId] = useState(params.get('empresa') ?? '')
+  const [contratoId, setContratoId] = useState(params.get('contrato') ?? '')
   const [codigo, setCodigo] = useState('')
   const [sistema, setSistema] = useState(SISTEMAS[0])
   const [tipo, setTipo] = useState(TIPOS_EQUIPO[0])
@@ -91,7 +93,7 @@ export function EquipoNuevoPage() {
   }, [equipos])
 
   const codigoFinal = (codigo.trim() || codigoSugerido).toUpperCase()
-  const valido = Boolean(empresaId && tipo && ubicacion.trim())
+  const valido = Boolean(empresaId && contratoId && tipo && ubicacion.trim())
   const empresa = empresas.find((e) => e.id === (creado?.empresaId ?? empresaId))
 
   const guardar = async () => {
@@ -101,6 +103,7 @@ export function EquipoNuevoPage() {
     try {
       const nuevo = await addEquipo({
         empresaId,
+        contratoId,
         codigo: codigoFinal,
         sistema,
         tipo,
@@ -163,6 +166,8 @@ export function EquipoNuevoPage() {
                   marginSize={0}
                 />
               </div>
+              <div className="mx-auto mt-3 h-px w-24 bg-zinc-200" />
+              <p className="mt-2 text-xs font-bold text-zinc-900">Solutions Machine</p>
             </div>
           </div>
 
@@ -241,7 +246,7 @@ export function EquipoNuevoPage() {
           <Campo etiqueta="Empresa">
             <select
               value={empresaId}
-              onChange={(e) => setEmpresaId(e.target.value)}
+              onChange={(e) => { setEmpresaId(e.target.value); setContratoId('') }}
               className={inputCls}
             >
               <option value="">Seleccione una empresa…</option>
@@ -252,6 +257,7 @@ export function EquipoNuevoPage() {
               ))}
             </select>
           </Campo>
+          <ContratoSelect empresaId={empresaId} value={contratoId} onChange={setContratoId} />
           <Campo
             etiqueta="Código QR"
             ayuda={`Si lo deja vacío se usará ${codigoSugerido}`}
@@ -428,6 +434,8 @@ export function EquipoNuevoPage() {
                 marginSize={0}
               />
             </div>
+            <div className="mx-auto mt-2.5 h-px w-20 bg-zinc-200" />
+            <p className="mt-1.5 text-[11px] font-bold text-zinc-900">Solutions Machine</p>
           </div>
         </div>
       </Card>

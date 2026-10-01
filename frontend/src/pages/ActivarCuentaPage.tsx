@@ -5,6 +5,7 @@ import { Button } from '../components/ui'
 import { PinInput, PIN_LARGO } from '../components/PinInput'
 import { api, setToken } from '../api/client'
 import { rutaDeRol } from '../utils/auth'
+import { useData } from '../store/DataContext'
 
 /**
  * Pantalla del enlace de activación.
@@ -15,6 +16,7 @@ import { rutaDeRol } from '../utils/auth'
 export function ActivarCuentaPage() {
   const { token } = useParams()
   const navigate = useNavigate()
+  const { recargar } = useData()
 
   const [estado, setEstado] = useState<'verificando' | 'listo' | 'invalido'>(
     'verificando',
@@ -49,9 +51,14 @@ export function ActivarCuentaPage() {
     }
   }, [token])
 
-  const confirmar = async () => {
+  /**
+   * Recibe la confirmación como argumento: al completarse el cuarto dígito,
+   * el estado `confirmacion` todavía no se ha actualizado en este render y
+   * compararía con solo tres dígitos.
+   */
+  const confirmar = async (repetido: string) => {
     if (!token || guardando) return
-    if (pin !== confirmacion) {
+    if (pin !== repetido) {
       setError('Los dos PIN no coinciden. Vuelva a intentarlo.')
       setConfirmacion('')
       return
@@ -62,6 +69,8 @@ export function ActivarCuentaPage() {
       const r = await api.activar(token, pin)
       setToken(r.token)
       sessionStorage.setItem('sm-usuario', JSON.stringify(r.usuario))
+      // Con la sesión recién creada, se cargan los datos del portal.
+      void recargar()
       navigate(rutaDeRol(r.usuario.rol), { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo definir el PIN.')
@@ -155,16 +164,8 @@ export function ActivarCuentaPage() {
                     onChange={(v) => {
                       setConfirmacion(v)
                       setError(null)
-                      if (v.length === PIN_LARGO) {
-                        // Se confirma en cuanto se completa el segundo PIN.
-                        setTimeout(() => {
-                          if (v === pin) void confirmar()
-                          else {
-                            setError('Los dos PIN no coinciden. Vuelva a intentarlo.')
-                            setConfirmacion('')
-                          }
-                        }, 150)
-                      }
+                      // Se confirma en cuanto se completa el segundo PIN.
+                      if (v.length === PIN_LARGO) setTimeout(() => void confirmar(v), 150)
                     }}
                     error={Boolean(error)}
                   />
@@ -196,7 +197,7 @@ export function ActivarCuentaPage() {
                 disabled={
                   guardando || pin.length < PIN_LARGO || confirmacion.length < PIN_LARGO
                 }
-                onClick={() => void confirmar()}
+                onClick={() => void confirmar(confirmacion)}
               >
                 {guardando ? 'Guardando…' : 'Activar mi cuenta'}
                 {!guardando && <ArrowRight className="size-4" />}

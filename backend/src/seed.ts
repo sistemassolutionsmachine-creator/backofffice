@@ -44,6 +44,7 @@ const equipos: Equipo[] = [
   {
     id: 'eq-01',
     empresaId: 'em-02',
+    contratoId: null,
     codigo: 'AC-001',
     sistema: 'VRFSamsung',
     tipo: 'UCO Refrigerante Variable',
@@ -63,6 +64,7 @@ const equipos: Equipo[] = [
   {
     id: 'eq-02',
     empresaId: 'em-02',
+    contratoId: null,
     codigo: 'AC-002',
     sistema: 'VRFSamsung',
     tipo: 'UMA',
@@ -82,6 +84,7 @@ const equipos: Equipo[] = [
   {
     id: 'eq-03',
     empresaId: 'em-03',
+    contratoId: null,
     codigo: 'AC-003',
     sistema: 'Vent. Mecanica',
     tipo: 'Unid. Extracción',
@@ -101,6 +104,7 @@ const equipos: Equipo[] = [
   {
     id: 'eq-04',
     empresaId: 'em-01',
+    contratoId: null,
     codigo: 'AC-004',
     sistema: 'CHWS',
     tipo: 'Unid. Hidr. Fancoil Desnudo',

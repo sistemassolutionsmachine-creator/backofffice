@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FileText, Download, Camera } from 'lucide-react'
+import { FileText, Camera } from 'lucide-react'
 import {
-  Button,
   Card,
   EstadoRevisionBadge,
   PageHeader,
@@ -11,6 +10,7 @@ import {
   cx,
 } from '../components/ui'
 import { api } from '../api/client'
+import { DescargarReporteButton } from '../components/DescargarReporteButton'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { nombreVisible } from '../types'
@@ -69,12 +69,6 @@ export function HistorialPage() {
       <PageHeader
         title="Historial de servicios"
         subtitle={`${revisiones.length} registros con consecutivo y trazabilidad completa`}
-        actions={
-          <Button variant="secondary">
-            <Download className="size-4" />
-            Exportar
-          </Button>
-        }
       />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -147,6 +141,7 @@ export function HistorialPage() {
                   {r.fotosEntrada.length + r.fotosSalida.length}
                 </span>
               </div>
+              <div className="mt-3"><DescargarReporteButton revision={r} /></div>
             </Card>
           )
         })}
@@ -204,13 +199,7 @@ export function HistorialPage() {
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end">
                       {r.estado === 'completado' ? (
-                        <button
-                          type="button"
-                          title="Descargar PDF"
-                          className="rounded-lg p-2 text-brand-600 hover:bg-brand-50"
-                        >
-                          <FileText className="size-4" />
-                        </button>
+                        <DescargarReporteButton revision={r} />
                       ) : (
                         <span className="p-2 text-zinc-300">
                           <FileText className="size-4" />

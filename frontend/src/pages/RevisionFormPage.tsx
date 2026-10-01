@@ -19,13 +19,14 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { Button, Card, PageHeader, cx } from '../components/ui'
+import { Button, Card, ESTADO_EQUIPO, PageHeader, cx } from '../components/ui'
 import { api } from '../api/client'
 import { hoyISO } from '../utils/fechas'
 import { useData } from '../store/DataContext'
-import { generarReportePdf } from '../utils/reportePdf'
+import { archivarReporte, descargarReporte } from '../utils/reporteArchivado'
 import { ESTILOS_FIRMA, getFirma } from '../utils/firma'
 import { nombreVisible } from '../types'
+import type { EstadoEquipo } from '../types'
 
 /* ------------------------------------------------------------------ */
 /* Catálogo del formato DM-MTT-001                                     */
@@ -277,7 +278,7 @@ function PhotoCapture({
 /* ------------------------------------------------------------------ */
 
 export function RevisionFormPage() {
-  const { equipos } = useData()
+  const { equipos, recargar } = useData()
   const [params] = useSearchParams()
   const { pathname } = useLocation()
   const modoTecnico = pathname.startsWith('/tecnico')
@@ -309,6 +310,7 @@ export function RevisionFormPage() {
   const [fotosEntrada, setFotosEntrada] = useState<Foto[]>([])
   const [fotosSalida, setFotosSalida] = useState<Foto[]>([])
   const [firmado, setFirmado] = useState(false)
+  const [estadoEquipo, setEstadoEquipo] = useState<EstadoEquipo | null>(null)
   const [enviado, setEnviado] = useState(false)
   const [generandoPdf, setGenerandoPdf] = useState(false)
   const [guardando, setGuardando] = useState<string | null>(null)
@@ -316,6 +318,7 @@ export function RevisionFormPage() {
 
   // El consecutivo lo asigna el servidor al registrar el reporte.
   const [consecutivo, setConsecutivo] = useState<string | null>(null)
+  const revisionRegistrada = useRef<{ id: string; equipoId: string; consecutivo: string } | null>(null)
   const equipo = equipos.find((e) => e.id === equipoId)
   const firmaTecnico = modoTecnico ? getFirma() : null
 
@@ -323,7 +326,10 @@ export function RevisionFormPage() {
   const fotoEntradaLista = fotosEntrada.length > 0
   const bloqueado = fotoEntradaLista ? false : ('pointer-events-none opacity-40 select-none' as const)
   const puedeCompletar =
-    fotoEntradaLista && fotosSalida.length > 0 && (!modoTecnico || firmado)
+    fotoEntradaLista &&
+    fotosSalida.length > 0 &&
+    estadoEquipo !== null &&
+    (!modoTecnico || firmado)
 
   /* Ítems de rutina visibles según tipo de equipo seleccionado */
   const rutinaVisible = useMemo(
@@ -387,27 +393,6 @@ export function RevisionFormPage() {
     observaciones,
   })
 
-  const datosPdf = (consecutivoFinal: string) => ({
-    ...datosReporte(),
-    consecutivo: consecutivoFinal,
-    equipo: equipo && {
-      codigo: equipo.codigo,
-      nombre: equipo.nombre,
-      modelo: equipo.modelo,
-      serial: equipo.serial,
-      ubicacion: equipo.ubicacion,
-    },
-    fotosEntrada: fotosEntrada.map((f) => f.url),
-    fotosSalida: fotosSalida.map((f) => f.url),
-    firma:
-      modoTecnico && firmado && firmaTecnico
-        ? {
-            nombre: firmaTecnico.nombre,
-            font: ESTILOS_FIRMA[firmaTecnico.estilo].font,
-          }
-        : null,
-  })
-
   /**
    * Registra el reporte, archiva las evidencias y el PDF.
    *
@@ -419,10 +404,10 @@ export function RevisionFormPage() {
     setErrorGuardado(null)
     try {
       setGuardando('Registrando el reporte…')
-      const revision = await api.revisiones.crear({
+      const revision = revisionRegistrada.current ?? await api.revisiones.crear({
         equipoId: equipo.id,
         tipo: motivo === 'correctivo' ? 'correctivo' : 'preventivo',
-        estado: 'completado',
+        estado: 'en_proceso',
         fecha: hoyISO(),
         ...datosReporte(),
         firmaTecnico:
@@ -434,32 +419,40 @@ export function RevisionFormPage() {
               }
             : null,
       })
+      revisionRegistrada.current = revision
 
-      setGuardando('Subiendo las fotografías…')
-      const [clavesEntrada, clavesSalida] = await Promise.all([
-        Promise.all(
-          fotosEntrada.map((f) =>
-            api.revisiones.subirEvidencia(equipo.id, revision.id, 'entrada', f.blob, f.nombre),
+      const actual = await api.revisiones.obtener(equipo.id, revision.id)
+      if (actual.estado !== 'completado') {
+        setGuardando('Subiendo las fotografías…')
+        const [clavesEntrada, clavesSalida] = await Promise.all([
+          Promise.all(
+            fotosEntrada.map((f) =>
+              api.revisiones.subirEvidencia(equipo.id, revision.id, 'entrada', f.blob, f.nombre),
+            ),
           ),
-        ),
-        Promise.all(
-          fotosSalida.map((f) =>
-            api.revisiones.subirEvidencia(equipo.id, revision.id, 'salida', f.blob, f.nombre),
+          Promise.all(
+            fotosSalida.map((f) =>
+              api.revisiones.subirEvidencia(equipo.id, revision.id, 'salida', f.blob, f.nombre),
+            ),
           ),
-        ),
-      ])
+        ])
+
+        await api.revisiones.actualizar(equipo.id, revision.id, {
+          ...datosReporte(),
+          estado: 'completado',
+          estadoEquipo,
+          fotosEntrada: clavesEntrada,
+          fotosSalida: clavesSalida,
+        })
+      }
 
       setGuardando('Generando y archivando el PDF…')
-      const pdf = await generarReportePdf(datosPdf(revision.consecutivo))
-      await api.revisiones.subirPdf(equipo.id, revision.id, pdf)
-
-      await api.revisiones.actualizar(equipo.id, revision.id, {
-        fotosEntrada: clavesEntrada,
-        fotosSalida: clavesSalida,
-      })
+      await archivarReporte(equipo.id, revision.id)
 
       setConsecutivo(revision.consecutivo)
       setEnviado(true)
+      // El servidor actualizó el estado del equipo: se refresca el inventario.
+      void recargar()
     } catch (e) {
       setErrorGuardado(
         e instanceof Error ? e.message : 'No se pudo registrar el reporte. Intente de nuevo.',
@@ -472,9 +465,9 @@ export function RevisionFormPage() {
   const descargarPdf = async () => {
     setGenerandoPdf(true)
     try {
-      await generarReportePdf(datosPdf(consecutivo ?? 'SIN-CONSECUTIVO'), {
-        descargar: true,
-      })
+      if (revisionRegistrada.current) await descargarReporte(revisionRegistrada.current)
+    } catch (e) {
+      setErrorGuardado(e instanceof Error ? e.message : 'No se pudo descargar el PDF')
     } finally {
       setGenerandoPdf(false)
     }
@@ -492,8 +485,9 @@ export function RevisionFormPage() {
           <p className="mt-2 text-sm text-zinc-500">
             El reporte{' '}
             <span className="font-mono font-bold text-zinc-900">{consecutivo}</span> fue
-            guardado y el documento PDF fue generado correctamente.
+            guardado y el documento PDF quedó archivado en S3.
           </p>
+          {errorGuardado && <p role="alert" className="mt-4 text-sm text-brand-700">{errorGuardado}</p>}
           <div className="mt-6 flex flex-col gap-2">
             <Button className="w-full" disabled={generandoPdf} onClick={descargarPdf}>
               <FileText className="size-4" />
@@ -1108,6 +1102,46 @@ export function RevisionFormPage() {
         )}
       </Card>
 
+      {/* Estado en que queda el equipo (obligatorio para completar) */}
+      <Card
+        className={cx(
+          'space-y-4 p-4 sm:p-5',
+          bloqueado,
+          fotoEntradaLista && !estadoEquipo && 'border-brand-300 ring-2 ring-brand-500/20',
+        )}
+      >
+        <SectionTitle
+          icon={Gauge}
+          title="¿Cómo queda el equipo?"
+          hint="Queda registrado en el historial y actualiza el estado del equipo en el inventario."
+        />
+        <div role="radiogroup" aria-label="Estado en que queda el equipo" className="grid gap-2 sm:grid-cols-3">
+          {(Object.keys(ESTADO_EQUIPO) as EstadoEquipo[]).map((id) => {
+            const e = ESTADO_EQUIPO[id]
+            const activo = estadoEquipo === id
+            return (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={activo}
+                onClick={() => setEstadoEquipo(id)}
+                className={cx(
+                  'flex items-center gap-2.5 rounded-xl border px-3.5 py-3 text-left text-sm font-semibold transition-all',
+                  activo
+                    ? 'border-zinc-900 bg-zinc-50 ring-2 ring-zinc-900/10'
+                    : 'border-zinc-200 bg-white hover:border-zinc-300',
+                )}
+              >
+                <span className={cx('size-2.5 shrink-0 rounded-full', e.dot)} />
+                <span className={activo ? 'text-zinc-900' : 'text-zinc-700'}>{e.label}</span>
+                {activo && <Check className="ml-auto size-4 text-zinc-900" />}
+              </button>
+            )
+          })}
+        </div>
+      </Card>
+
       {/* Firmas */}
       {modoTecnico && firmaTecnico && (
         <Card className={cx('space-y-4 p-4 sm:p-5', bloqueado)}>
@@ -1184,6 +1218,11 @@ export function RevisionFormPage() {
       )}
 
       {/* Acciones */}
+      {fotoEntradaLista && fotosSalida.length > 0 && !estadoEquipo && (
+        <p className="text-right text-xs font-semibold text-brand-700">
+          Indique cómo queda el equipo para completar el reporte.
+        </p>
+      )}
       <div className={cx('flex flex-col gap-2 sm:flex-row sm:justify-end', bloqueado)}>
         <Button
           className="sm:w-auto"

@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { Button, Card, PageHeader, cx } from '../components/ui'
+import { QrProgresoModal, type ProgresoQr } from '../components/QrProgresoModal'
 import { useData } from '../store/DataContext'
 import { descargarEtiquetasDeEmpresa } from '../utils/qr'
 import type { Empresa, Equipo } from '../types'
@@ -167,7 +168,7 @@ export function EmpresasPage() {
   const [modal, setModal] = useState<'crear' | Empresa | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [descargando, setDescargando] = useState<string | null>(null)
-  const [progreso, setProgreso] = useState<string | null>(null)
+  const [progreso, setProgreso] = useState<ProgresoQr | null>(null)
 
   // Permite llegar con /empresas?nueva=1 desde "Registrar equipo"
   useEffect(() => {
@@ -182,12 +183,13 @@ export function EmpresasPage() {
    * archivo comprimido, con una carpeta por empresa.
    */
   const descargarQrs = async (empresa: Empresa, equipos: Equipo[]) => {
+    if (descargando) return
     setDescargando(empresa.id)
-    setProgreso(null)
+    setProgreso({ hechos: 0, total: equipos.length, fase: 'etiquetas', porcentaje: 0 })
     setError(null)
     try {
-      await descargarEtiquetasDeEmpresa(empresa, equipos, (hechos, total) => {
-        setProgreso(`Generando ${hechos} de ${total}…`)
+      await descargarEtiquetasDeEmpresa(empresa, equipos, (hechos, total, fase, porcentaje) => {
+        setProgreso({ hechos, total, fase, porcentaje })
       })
     } catch (e) {
       setError(
@@ -255,7 +257,7 @@ export function EmpresasPage() {
                         ? `Descargar los ${equipos.length} códigos QR`
                         : 'Esta empresa no tiene equipos'
                     }
-                    disabled={equipos.length === 0 || descargando === em.id}
+                    disabled={equipos.length === 0 || Boolean(descargando)}
                     onClick={() => void descargarQrs(em, equipos)}
                     className="rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -317,12 +319,12 @@ export function EmpresasPage() {
                 <Button
                   variant="secondary"
                   className="mt-3 w-full"
-                  disabled={descargando === em.id}
+                  disabled={Boolean(descargando)}
                   onClick={() => void descargarQrs(em, equipos)}
                 >
                   <Download className="size-4" />
                   {descargando === em.id
-                    ? (progreso ?? 'Preparando…')
+                    ? 'Preparando archivo…'
                     : `Descargar ${equipos.length} códigos QR`}
                 </Button>
               )}
@@ -331,6 +333,7 @@ export function EmpresasPage() {
         })}
       </div>
 
+      {descargando && progreso && <QrProgresoModal empresa={empresas.find((e) => e.id === descargando)?.nombre ?? ''} progreso={progreso} />}
       {modal && (
         <EmpresaModal
           inicial={modal === 'crear' ? null : modal}

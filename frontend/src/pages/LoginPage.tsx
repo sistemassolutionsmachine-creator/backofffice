@@ -4,6 +4,7 @@ import { QrCode, FileText, Camera, ShieldCheck, ArrowRight, KeyRound } from 'luc
 import { Button } from '../components/ui'
 import { PinInput, PIN_LARGO } from '../components/PinInput'
 import { iniciarSesion, rutaDeRol } from '../utils/auth'
+import { useData } from '../store/DataContext'
 
 const features = [
   { icon: QrCode, text: 'Identificación de equipos por código QR' },
@@ -14,6 +15,7 @@ const features = [
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { recargar } = useData()
   const [usuario, setUsuario] = useState('')
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -25,6 +27,9 @@ export function LoginPage() {
     setError(null)
     try {
       const u = await iniciarSesion(usuarioActual, pinActual)
+      // Los datos se cargan al montar la aplicación, cuando aún no había
+      // sesión: hay que pedirlos ahora que existe el token.
+      void recargar()
       navigate(rutaDeRol(u.rol), { replace: true })
     } catch (e) {
       setError(

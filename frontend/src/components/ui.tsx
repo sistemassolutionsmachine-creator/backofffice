@@ -75,7 +75,7 @@ export function PageHeader({
   subtitle,
   actions,
 }: {
-  title: string
+  title: ReactNode
   subtitle?: string
   actions?: ReactNode
 }) {
@@ -146,6 +146,35 @@ export function EstadoEquipoBadge({ estado }: { estado: EstadoEquipo }) {
       )}
     >
       <span className={cx('size-1.5 rounded-full', s.dot)} />
+      {s.label}
+    </span>
+  )
+}
+
+/** Colores y textos de los estados del equipo, compartidos por toda la app. */
+export const ESTADO_EQUIPO: Record<
+  EstadoEquipo,
+  { label: string; dot: string; text: string }
+> = {
+  operativo: { label: 'Operativo', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+  mantenimiento: { label: 'En mantenimiento', dot: 'bg-amber-500', text: 'text-amber-700' },
+  fuera_servicio: { label: 'Fuera de servicio', dot: 'bg-brand-600', text: 'text-brand-700' },
+}
+
+/** Punto de color + estado. Sin dato (revisiones antiguas) muestra "Sin registrar". */
+export function EstadoEquipoPunto({ estado }: { estado?: EstadoEquipo | null }) {
+  if (!estado) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+        <span className="size-2 rounded-full border border-dashed border-zinc-300" />
+        Sin registrar
+      </span>
+    )
+  }
+  const s = ESTADO_EQUIPO[estado]
+  return (
+    <span className={cx('inline-flex items-center gap-1.5 text-xs font-semibold', s.text)}>
+      <span className={cx('size-2 shrink-0 rounded-full', s.dot)} />
       {s.label}
     </span>
   )

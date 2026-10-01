@@ -5,6 +5,7 @@
   "description": "API serverless de Solutions Machine (Lambda + DynamoDB + S3)",
   "type": "module",
   "scripts": {
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/seed.ts"
   },

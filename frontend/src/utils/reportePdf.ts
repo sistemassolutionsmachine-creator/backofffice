@@ -49,6 +49,7 @@ const M = 12 // margen (mm)
 async function fotoAJpeg(url: string): Promise<{ data: string; w: number; h: number } | null> {
   try {
     const img = new Image()
+    img.crossOrigin = 'anonymous'
     await new Promise<void>((res, rej) => {
       img.onload = () => res()
       img.onerror = () => rej(new Error('img'))
@@ -68,7 +69,7 @@ async function fotoAJpeg(url: string): Promise<{ data: string; w: number; h: num
       h: canvas.height,
     }
   } catch {
-    return null
+    throw new Error('No se pudo cargar una evidencia para el PDF. Intente nuevamente.')
   }
 }
 

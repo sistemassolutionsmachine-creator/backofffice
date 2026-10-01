@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   Building2,
+  Crown,
   KeyRound,
   Pencil,
   Power,
@@ -22,7 +23,31 @@ import {
 } from '../components/ui'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
+import { InvitacionModal, type EstadoInvitacion } from '../components/InvitacionModal'
+import { ConfirmarFraseModal } from '../components/ConfirmarFraseModal'
+import { getUsuario } from '../utils/auth'
 import type { RolUsuario, Usuario } from '../types'
+
+/** Acción sensible sobre un superadministrador que exige confirmar por escrito. */
+interface AccionProtegida {
+  usuario: Usuario
+  patch: Partial<Usuario>
+  accion: 'desactivar' | 'revocar'
+}
+
+/**
+ * Indica si el cambio quita la protección a un superadministrador.
+ * Debe coincidir con la regla del servidor, que es la que decide.
+ */
+function accionProtegida(u: Usuario, patch: Partial<Usuario>): AccionProtegida | null {
+  if (!u.superadmin) return null
+  const estado = patch.estado ?? u.estado
+  const rol = patch.rol ?? u.rol
+  const sigueSiendo = rol === 'admin' && estado === 'activo' && (patch.superadmin ?? true)
+  if (sigueSiendo) return null
+  const desactiva = u.estado === 'activo' && estado === 'inactivo'
+  return { usuario: u, patch, accion: desactiva ? 'desactivar' : 'revocar' }
+}
 
 const ROLES: Array<{ id: RolUsuario; label: string; detalle: string }> = [
   {
@@ -61,11 +86,17 @@ function UsuarioModal({
   usuariosExistentes,
   onGuardar,
   onCerrar,
+  puedeDesignar,
+  puedeGestionarSuper,
 }: {
   inicial: Usuario | null
   usuariosExistentes: Usuario[]
   onGuardar: (data: Borrador) => void | Promise<void>
   onCerrar: () => void
+  /** Si quien edita puede convertir a alguien en superadministrador. */
+  puedeDesignar: boolean
+  /** Si quien edita puede modificar a un superadministrador. */
+  puedeGestionarSuper: boolean
 }) {
   const { empresas } = useData()
   const [form, setForm] = useState<Borrador>(
@@ -77,9 +108,14 @@ function UsuarioModal({
           rol: inicial.rol,
           empresaId: inicial.empresaId,
           estado: inicial.estado,
+          superadmin: Boolean(inicial.superadmin),
         }
       : BORRADOR_VACIO,
   )
+  const bloqueado = Boolean(inicial?.superadmin) && !puedeGestionarSuper
+  const superBloqueado = form.superadmin
+    ? !puedeGestionarSuper
+    : !puedeDesignar || Boolean(inicial?.pendienteActivacion)
 
   const set = (patch: Partial<Borrador>) => setForm((f) => ({ ...f, ...patch }))
 
@@ -89,6 +125,7 @@ function UsuarioModal({
       u.usuario.toLowerCase() === form.usuario.trim().toLowerCase(),
   )
   const valido =
+    !bloqueado &&
     form.nombre.trim().length >= 3 &&
     form.usuario.trim().length >= 3 &&
     !usuarioRepetido &&
@@ -187,6 +224,44 @@ function UsuarioModal({
             <p className="mt-2 text-xs text-zinc-500">
               {ROLES.find((r) => r.id === form.rol)?.detalle}
             </p>
+
+            {form.rol === 'admin' && inicial && (
+              <label
+                className={cx(
+                  'mt-3 flex items-start gap-3 rounded-xl border p-3.5 transition-colors',
+                  form.superadmin
+                    ? 'border-amber-300 bg-amber-50'
+                    : 'border-zinc-200 bg-white',
+                  superBloqueado ? 'opacity-60' : 'cursor-pointer',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.superadmin)}
+                  disabled={superBloqueado}
+                  onChange={(e) => set({ superadmin: e.target.checked })}
+                  className="mt-0.5 size-4 shrink-0 accent-amber-500"
+                />
+                <span className="text-xs text-zinc-600">
+                  <span className="flex items-center gap-1.5 text-sm font-bold text-zinc-900">
+                    <Crown className="size-4 text-amber-500" />
+                    Superadministrador
+                  </span>
+                  Cuenta protegida: solo otro superadministrador puede editarla, y
+                  desactivarla exige escribir <code>desactivar {inicial.usuario}</code>.
+                  {!puedeDesignar && !form.superadmin && (
+                    <span className="mt-1 block font-semibold text-zinc-500">
+                      Solo un superadministrador puede designar a otro.
+                    </span>
+                  )}
+                  {inicial.pendienteActivacion && (
+                    <span className="mt-1 block font-semibold text-zinc-500">
+                      Disponible cuando el usuario active su cuenta.
+                    </span>
+                  )}
+                </span>
+              </label>
+            )}
           </div>
 
           {form.rol === 'cliente' && (
@@ -246,6 +321,13 @@ function UsuarioModal({
           </div>
         </div>
 
+        {bloqueado && (
+          <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-xs font-semibold text-amber-900">
+            <Crown className="mt-0.5 size-3.5 shrink-0" />
+            Solo un superadministrador puede modificar esta cuenta.
+          </p>
+        )}
+
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={onCerrar} className="sm:w-auto">
             Cancelar
@@ -291,40 +373,59 @@ export function UsuariosPage() {
   const activos = usuarios.filter((u) => u.estado === 'activo').length
 
   const [error, setError] = useState<string | null>(null)
-  const [invitacion, setInvitacion] = useState<{
-    nombre: string
-    enviado: boolean
-    enlace?: string
-  } | null>(null)
+  const [invitacion, setInvitacion] = useState<EstadoInvitacion | null>(null)
+  const [usuarioPin, setUsuarioPin] = useState<Usuario | null>(null)
+  const [protegida, setProtegida] = useState<AccionProtegida | null>(null)
+  const [designar, setDesignar] = useState('')
+
+  const yo = getUsuario()
+  const soySuper = Boolean(usuarios.find((u) => u.id === yo?.id)?.superadmin)
+  const superadmins = usuarios.filter((u) => u.superadmin && u.estado === 'activo')
+  // Sin ninguno designado, cualquier administrador puede nombrar al primero.
+  const puedeDesignar = soySuper || superadmins.length === 0
+  const candidatos = usuarios.filter(
+    (u) => u.rol === 'admin' && u.estado === 'activo' && !u.superadmin && !u.pendienteActivacion,
+  )
 
   const guardar = async (data: Borrador) => {
     try {
       if (modal.usuario) {
+        const sensible = accionProtegida(modal.usuario, data)
+        if (sensible) {
+          // Se cierra el editor y se pide la frase antes de enviar el cambio.
+          setModal({ abierto: false, usuario: null })
+          setProtegida(sensible)
+          return
+        }
         await updateUsuario(modal.usuario.id, data)
         setInvitacion(null)
       } else {
+        setInvitacion({ nombre: data.nombre, email: data.email, estado: 'enviando' })
         const nuevo = await addUsuario({ ...data, ultimoAcceso: null })
         setInvitacion({
           nombre: nuevo.nombre,
-          enviado: nuevo.correoEnviado,
+          email: nuevo.email,
+          estado: nuevo.correoEnviado ? 'enviado' : 'alternativo',
           enlace: nuevo.enlace,
         })
       }
       setModal({ abierto: false, usuario: null })
       setError(null)
     } catch (e) {
+      if (!modal.usuario) setInvitacion({ nombre: data.nombre, estado: 'error', motivo: e instanceof Error ? e.message : 'No se pudo crear el usuario' })
       setError(e instanceof Error ? e.message : 'No se pudo guardar el usuario')
     }
   }
 
   /** Invalida el PIN actual y genera un enlace nuevo. */
   const restablecerPin = async (u: Usuario) => {
-    if (!confirm(`¿Enviar a ${u.nombre} un enlace para definir un PIN nuevo?`)) return
+    setInvitacion({ nombre: u.nombre, email: u.email, estado: 'enviando' })
     try {
       const r = await reiniciarPin(u.id)
-      setInvitacion({ nombre: u.nombre, enviado: r.correoEnviado, enlace: r.enlace })
+      setInvitacion({ nombre: u.nombre, email: u.email, estado: r.correoEnviado ? 'enviado' : 'alternativo', enlace: r.enlace })
       setError(null)
     } catch (e) {
+      setInvitacion({ nombre: u.nombre, estado: 'error', motivo: e instanceof Error ? e.message : 'No se pudo restablecer el PIN' })
       setError(e instanceof Error ? e.message : 'No se pudo restablecer el PIN')
     }
   }
@@ -340,12 +441,28 @@ export function UsuariosPage() {
   }
 
   const alternarEstado = async (u: Usuario) => {
+    const patch: Partial<Usuario> = { estado: u.estado === 'activo' ? 'inactivo' : 'activo' }
+    const sensible = accionProtegida(u, patch)
+    if (sensible) {
+      setProtegida(sensible)
+      return
+    }
     try {
-      await updateUsuario(u.id, {
-        estado: u.estado === 'activo' ? 'inactivo' : 'activo',
-      })
+      await updateUsuario(u.id, patch)
+      setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo cambiar el estado')
+    }
+  }
+
+  const designarSuper = async () => {
+    if (!designar) return
+    try {
+      await updateUsuario(designar, { superadmin: true })
+      setDesignar('')
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo designar al superadministrador')
     }
   }
 
@@ -409,57 +526,9 @@ export function UsuariosPage() {
 
       {/* Resultado del envío de la invitación */}
       {invitacion && (
-        <Card
-          className={cx(
-            'p-4',
-            invitacion.enviado
-              ? 'border-emerald-200 bg-emerald-50'
-              : 'border-amber-200 bg-amber-50',
-          )}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              {invitacion.enviado ? (
-                <p className="text-sm font-semibold text-emerald-800">
-                  Se envió a {invitacion.nombre} un correo para definir su PIN.
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm font-semibold text-amber-900">
-                    No se pudo enviar el correo a {invitacion.nombre}.
-                  </p>
-                  <p className="mt-1 text-xs text-amber-800">
-                    Comparta este enlace por otro medio. Caduca en 48 horas y solo
-                    puede usarse una vez.
-                  </p>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-3 py-2 font-mono text-xs text-zinc-700 ring-1 ring-amber-200">
-                      {invitacion.enlace}
-                    </code>
-                    <Button
-                      variant="secondary"
-                      className="shrink-0"
-                      onClick={() => {
-                        if (invitacion.enlace) {
-                          void navigator.clipboard.writeText(invitacion.enlace)
-                        }
-                      }}
-                    >
-                      Copiar
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setInvitacion(null)}
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/60 hover:text-zinc-700"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </Card>
+        <InvitacionModal invitacion={invitacion}
+          onCerrar={() => { setInvitacion(null); setUsuarioPin(null) }}
+          onConfirmar={() => { if (usuarioPin) void restablecerPin(usuarioPin) }} />
       )}
 
       {/* Filtros */}
@@ -521,6 +590,12 @@ export function UsuariosPage() {
                       {u.nombre}
                     </p>
                     <RolBadge rol={u.rol} />
+                    {u.superadmin && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        <Crown className="size-3" />
+                        Superadmin
+                      </span>
+                    )}
                     {u.estado === 'inactivo' && (
                       <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-bold text-zinc-600 uppercase">
                         Inactivo
@@ -547,9 +622,16 @@ export function UsuariosPage() {
                   <button
                     type="button"
                     onClick={() => void alternarEstado(u)}
-                    title={u.estado === 'activo' ? 'Desactivar' : 'Activar'}
+                    disabled={u.superadmin && !soySuper}
+                    title={
+                      u.superadmin && !soySuper
+                        ? 'Solo un superadministrador puede desactivarlo'
+                        : u.estado === 'activo'
+                          ? 'Desactivar'
+                          : 'Activar'
+                    }
                     className={cx(
-                      'rounded-lg p-2 transition-colors',
+                      'rounded-lg p-2 disabled:cursor-not-allowed disabled:opacity-30 transition-colors',
                       u.estado === 'activo'
                         ? 'text-emerald-600 hover:bg-emerald-50'
                         : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700',
@@ -559,9 +641,13 @@ export function UsuariosPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void restablecerPin(u)}
+                    onClick={() => {
+                      setUsuarioPin(u)
+                      setInvitacion({ nombre: u.nombre, email: u.email, estado: 'confirmar' })
+                    }}
+                    disabled={u.superadmin && !soySuper}
                     title="Enviar enlace para definir un PIN nuevo"
-                    className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+                    className="rounded-lg p-2 disabled:cursor-not-allowed disabled:opacity-30 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
                   >
                     <KeyRound className="size-4" />
                   </button>
@@ -569,15 +655,16 @@ export function UsuariosPage() {
                     type="button"
                     onClick={() => setModal({ abierto: true, usuario: u })}
                     title="Editar"
-                    className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+                    className="rounded-lg p-2 disabled:cursor-not-allowed disabled:opacity-30 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
                   >
                     <Pencil className="size-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => void eliminar(u)}
-                    title="Eliminar"
-                    className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                    disabled={u.superadmin}
+                    title={u.superadmin ? 'Revoque el rol de superadministrador antes de eliminar' : 'Eliminar'}
+                    className="rounded-lg p-2 disabled:cursor-not-allowed disabled:opacity-30 text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -599,6 +686,65 @@ export function UsuariosPage() {
             <h2 className="text-sm font-bold text-zinc-900">Roles del sistema</h2>
           </div>
           <ul className="mt-4 space-y-3">
+            {/* Superadministrador: administrador protegido */}
+            <li className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-sm font-bold text-zinc-900">
+                  <Crown className="size-4 text-amber-500" />
+                  Superadministrador
+                </p>
+                <span className="font-mono text-xs font-bold text-amber-700">
+                  {superadmins.length}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+                Administrador protegido. Solo otro superadministrador puede editarlo, y
+                desactivarlo exige escribir <code>desactivar usuario</code>.
+              </p>
+              {superadmins.length > 0 && (
+                <ul className="mt-2.5 space-y-1">
+                  {superadmins.map((s) => (
+                    <li key={s.id} className="truncate text-xs font-semibold text-amber-900">
+                      {s.nombre} <span className="font-mono text-amber-700">· {s.usuario}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {puedeDesignar ? (
+                candidatos.length > 0 ? (
+                  <div className="mt-3 flex gap-2">
+                    <select
+                      value={designar}
+                      onChange={(e) => setDesignar(e.target.value)}
+                      aria-label="Administrador a designar como superadministrador"
+                      className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-2.5 py-2 text-xs"
+                    >
+                      <option value="">Elegir administrador…</option>
+                      {candidatos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.nombre} ({c.usuario})
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      className="shrink-0 px-3 py-2 text-xs"
+                      disabled={!designar}
+                      onClick={() => void designarSuper()}
+                    >
+                      Marcar
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[11px] text-zinc-500">
+                    No hay otros administradores activos para designar.
+                  </p>
+                )
+              ) : (
+                <p className="mt-2 text-[11px] font-semibold text-zinc-500">
+                  Solo un superadministrador puede designar a otro.
+                </p>
+              )}
+            </li>
             {ROLES.map((r) => (
               <li key={r.id} className="rounded-xl bg-zinc-50 p-3.5">
                 <div className="flex items-center justify-between gap-2">
@@ -620,6 +766,31 @@ export function UsuariosPage() {
           usuariosExistentes={usuarios}
           onGuardar={guardar}
           onCerrar={() => setModal({ abierto: false, usuario: null })}
+          puedeDesignar={puedeDesignar}
+          puedeGestionarSuper={soySuper}
+        />
+      )}
+
+      {protegida && (
+        <ConfirmarFraseModal
+          titulo={
+            protegida.accion === 'desactivar'
+              ? 'Desactivar superadministrador'
+              : 'Revocar superadministrador'
+          }
+          descripcion={
+            protegida.accion === 'desactivar'
+              ? `${protegida.usuario.nombre} dejará de poder iniciar sesión y perderá su rol de superadministrador. Esta acción es sensible.`
+              : `${protegida.usuario.nombre} seguirá activo, pero dejará de estar protegido como superadministrador.`
+          }
+          frase={`${protegida.accion} ${protegida.usuario.usuario}`}
+          textoBoton={protegida.accion === 'desactivar' ? 'Desactivar' : 'Revocar'}
+          onCerrar={() => setProtegida(null)}
+          onConfirmar={async (confirmacion) => {
+            await updateUsuario(protegida.usuario.id, { ...protegida.patch, confirmacion })
+            setProtegida(null)
+            setError(null)
+          }}
         />
       )}
     </div>

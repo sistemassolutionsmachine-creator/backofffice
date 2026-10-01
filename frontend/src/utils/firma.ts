@@ -1,3 +1,6 @@
+import { api } from '../api/client'
+import type { Usuario } from '../types'
+
 export type EstiloFirma = 'clasica' | 'moderna'
 
 export interface Firma {
@@ -23,20 +26,34 @@ export const ESTILOS_FIRMA: Record<
   },
 }
 
-const KEY = 'sm-firma'
+const CLAVE_USUARIO = 'sm-usuario'
 
-export function getFirma(): Firma | null {
+function usuarioGuardado(): Usuario | null {
   try {
-    const raw = sessionStorage.getItem(KEY)
-    if (!raw) return null
-    const f = JSON.parse(raw) as Firma
-    if (!f.nombre || !(f.estilo in ESTILOS_FIRMA)) return null
-    return f
+    const raw = sessionStorage.getItem(CLAVE_USUARIO)
+    return raw ? (JSON.parse(raw) as Usuario) : null
   } catch {
     return null
   }
 }
 
-export function setFirma(firma: Firma) {
-  sessionStorage.setItem(KEY, JSON.stringify(firma))
+/**
+ * La firma vive en el perfil del usuario (DynamoDB) y viaja en la respuesta
+ * del login: se define una vez y no se vuelve a pedir en cada sesión.
+ */
+export function getFirma(): Firma | null {
+  const f = usuarioGuardado()?.firma
+  if (!f?.nombre || (f.estilo !== 'clasica' && f.estilo !== 'moderna')) return null
+  return { nombre: f.nombre, estilo: f.estilo as EstiloFirma, cargo: f.cargo }
+}
+
+/**
+ * Guarda la firma en el perfil del usuario.
+ *
+ * Actualiza también la copia local de la sesión, para que la interfaz la
+ * refleje sin esperar una recarga.
+ */
+export async function setFirma(firma: Firma): Promise<void> {
+  const actualizado = await api.usuarios.guardarFirma(firma)
+  sessionStorage.setItem(CLAVE_USUARIO, JSON.stringify(actualizado))
 }

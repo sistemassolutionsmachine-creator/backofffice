@@ -98,4 +98,45 @@
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
+
+  /* Entrada escalonada de las tarjetas (el retraso se asigna por índice) */
+  @media (prefers-reduced-motion: no-preference) {
+    .anim-entrada {
+      animation: aparecer 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes aparecer {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.98);
+      }
+    }
+  }
+}
+
+/* Transición entre vistas (View Transitions API).
+   El título de la empresa lleva su propio view-transition-name, así que
+   hace morph de la tarjeta al encabezado; el resto funde y desliza. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root) {
+    animation: vt-salida 140ms ease-in both;
+  }
+
+  ::view-transition-new(root) {
+    animation: vt-entrada 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes vt-salida {
+    to {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes vt-entrada {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
 }

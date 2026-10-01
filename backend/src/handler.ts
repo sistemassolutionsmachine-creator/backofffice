@@ -12,6 +12,7 @@ import {
   type Respuesta,
 } from './lib/http.js'
 import * as auth from './routes/auth.js'
+import * as contratos from './routes/contratos.js'
 import * as empresas from './routes/empresas.js'
 import * as equipos from './routes/equipos.js'
 import * as revisiones from './routes/revisiones.js'
@@ -50,6 +51,13 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       if (a && m === 'DELETE') return empresas.eliminar(req, a)
       break
 
+    case 'contratos':
+      if (!a && m === 'GET') return contratos.listar(req)
+      if (!a && m === 'POST') return contratos.crear(req)
+      if (a && (m === 'PUT' || m === 'PATCH')) return contratos.actualizar(req, a)
+      if (a && m === 'DELETE') return contratos.eliminar(req, a)
+      break
+
     case 'equipos':
       if (!a && m === 'GET') return equipos.listar(req)
       if (!a && m === 'POST') return equipos.crear(req)
@@ -65,6 +73,7 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       if (!a && m === 'POST') return revisiones.crear(req)
       if (a === 'evidencias' && m === 'POST') return revisiones.urlSubidaEvidencia(req)
       if (a === 'pdf' && m === 'POST') return revisiones.urlSubidaPdf(req)
+      if (a === 'pdf' && b === 'confirmar' && m === 'PUT') return revisiones.confirmarPdf(req)
       // /revisiones/<equipoId>/<revisionId>
       if (a && b && c === 'firmar' && m === 'POST') {
         return revisiones.firmarCliente(req, a, b)
@@ -78,6 +87,8 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
     case 'usuarios':
       if (!a && m === 'GET') return usuarios.listar(req)
       if (!a && m === 'POST') return usuarios.crear(req)
+      // La firma es del propio usuario: va antes que la edición por id.
+      if (a === 'firma' && m === 'PUT') return usuarios.guardarFirma(req)
       if (a && b === 'pin' && m === 'POST') return usuarios.reiniciarPin(req, a)
       if (a && (m === 'PUT' || m === 'PATCH')) return usuarios.actualizar(req, a)
       if (a && m === 'DELETE') return usuarios.eliminar(req, a)

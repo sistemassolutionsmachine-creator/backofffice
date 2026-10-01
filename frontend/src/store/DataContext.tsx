@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { api, getToken, type Invitacion, type UsuarioCreado } from '../api/client'
-import type { Empresa, Equipo, Usuario } from '../types'
+import type { Contrato, Empresa, Equipo, Usuario } from '../types'
 
 /**
  * Estado compartido del portal.
@@ -21,10 +21,13 @@ import type { Empresa, Equipo, Usuario } from '../types'
 interface DataContextValue {
   equipos: Equipo[]
   empresas: Empresa[]
+  contratos: Contrato[]
   usuarios: Usuario[]
   cargando: boolean
   error: string | null
   recargar: () => Promise<void>
+  addContrato: (data: Partial<Contrato>) => Promise<Contrato>
+  updateContrato: (id: string, patch: Partial<Contrato>) => Promise<void>
 
   addEquipo: (data: Omit<Equipo, 'id'>) => Promise<Equipo>
   updateEquipo: (id: string, patch: Partial<Equipo>) => Promise<void>
@@ -35,7 +38,10 @@ interface DataContextValue {
   removeEmpresa: (id: string) => Promise<void>
 
   addUsuario: (data: Partial<Usuario>) => Promise<UsuarioCreado>
-  updateUsuario: (id: string, patch: Partial<Usuario>) => Promise<void>
+  updateUsuario: (
+    id: string,
+    patch: Partial<Usuario> & { confirmacion?: string },
+  ) => Promise<void>
   removeUsuario: (id: string) => Promise<void>
   reiniciarPin: (id: string) => Promise<Invitacion>
 
@@ -49,6 +55,7 @@ const DataContext = createContext<DataContextValue | null>(null)
 export function DataProvider({ children }: { children: ReactNode }) {
   const [equipos, setEquipos] = useState<Equipo[]>([])
   const [empresas, setEmpresas] = useState<Empresa[]>([])
+  const [contratos, setContratos] = useState<Contrato[]>([])
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +71,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ])
       setEquipos(eq)
       setEmpresas(em)
+
+      // Mantiene visible el inventario si el módulo de contratos no responde.
+      try {
+        setContratos(await api.contratos.listar())
+      } catch (e) {
+        setContratos([])
+        setError(e instanceof Error ? e.message : 'No se pudieron cargar los contratos')
+      }
 
       // Solo el administrador puede consultar el listado de usuarios.
       try {
@@ -83,6 +98,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [recargar])
 
   /* ---------- Equipos ---------- */
+
+  const addContrato = useCallback(async (data: Partial<Contrato>) => {
+    const nuevo = await api.contratos.crear(data)
+    setContratos((s) => [nuevo, ...s])
+    return nuevo
+  }, [])
+
+  const updateContrato = useCallback(async (id: string, patch: Partial<Contrato>) => {
+    const actualizado = await api.contratos.actualizar(id, patch)
+    setContratos((s) => s.map((c) => c.id === id ? actualizado : c))
+  }, [])
 
   const addEquipo = useCallback(async (data: Omit<Equipo, 'id'>) => {
     const nuevo = await api.equipos.crear(data)
@@ -126,7 +152,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return nuevo
   }, [])
 
-  const updateUsuario = useCallback(async (id: string, patch: Partial<Usuario>) => {
+  const updateUsuario = useCallback(async (
+    id: string,
+    patch: Partial<Usuario> & { confirmacion?: string },
+  ) => {
     const actualizado = await api.usuarios.actualizar(id, patch)
     setUsuarios((s) => s.map((u) => (u.id === id ? actualizado : u)))
   }, [])
@@ -144,10 +173,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     () => ({
       equipos,
       empresas,
+      contratos,
       usuarios,
       cargando,
       error,
       recargar,
+      addContrato,
+      updateContrato,
       addEquipo,
       updateEquipo,
       removeEquipo,
@@ -166,10 +198,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [
       equipos,
       empresas,
+      contratos,
       usuarios,
       cargando,
       error,
       recargar,
+      addContrato,
+      updateContrato,
       addEquipo,
       updateEquipo,
       removeEquipo,

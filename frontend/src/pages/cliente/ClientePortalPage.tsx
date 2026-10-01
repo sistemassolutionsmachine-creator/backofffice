@@ -24,10 +24,9 @@ import { FirmaModal } from '../../components/FirmaModal'
 import { api } from '../../api/client'
 import { formatFecha } from '../../utils/fechas'
 import { cerrarSesion, getUsuario } from '../../utils/auth'
-import { ESTILOS_FIRMA, type EstiloFirma } from '../../utils/firma'
-import { generarReportePdf } from '../../utils/reportePdf'
+import { archivarReporte, descargarReporte } from '../../utils/reporteArchivado'
 import { nombreVisible } from '../../types'
-import type { Empresa, Equipo, Revision } from '../../types'
+import type { Contrato, Empresa, Equipo, Revision } from '../../types'
 
 export function ClientePortalPage() {
   const navigate = useNavigate()
@@ -35,6 +34,7 @@ export function ClientePortalPage() {
 
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const [equipos, setEquipos] = useState<Equipo[]>([])
+  const [contratos, setContratos] = useState<Contrato[]>([])
   const [revisiones, setRevisiones] = useState<Revision[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -47,13 +47,15 @@ export function ClientePortalPage() {
   const cargar = async () => {
     try {
       // El servidor ya acota cada respuesta a la empresa del cliente.
-      const [empresas, eq, rev] = await Promise.all([
+      const [empresas, eq, rev, ct] = await Promise.all([
         api.empresas.listar(),
         api.equipos.listar(),
         api.revisiones.listar(),
+        api.contratos.listar(),
       ])
       setEmpresa(empresas[0] ?? null)
       setEquipos(eq)
+      setContratos(ct)
       setRevisiones(rev)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudieron cargar sus datos')
@@ -82,68 +84,13 @@ export function ClientePortalPage() {
     return eq ? nombreVisible(eq) : 'Equipo'
   }
 
-  /* ---------- Reconstrucción del PDF ---------- */
-
-  /**
-   * Rehace el documento con los datos actuales del reporte.
-   *
-   * El PDF se archiva cuando el técnico cierra la visita, es decir, antes de
-   * que el cliente firme. Al firmar hay que volver a generarlo para que el
-   * documento refleje las dos firmas.
-   */
-  const construirPdf = async (revision: Revision, descargar: boolean) => {
-    const detalle = await api.revisiones.obtener(revision.equipoId, revision.id)
-    const eq = equipos.find((e) => e.id === revision.equipoId)
-
-    const fuente = (estilo?: string) =>
-      ESTILOS_FIRMA[(estilo as EstiloFirma) ?? 'clasica']?.font ??
-      ESTILOS_FIRMA.clasica.font
-
-    return generarReportePdf(
-      {
-        consecutivo: detalle.consecutivo,
-        motivo: detalle.motivo,
-        equipo: eq && {
-          codigo: eq.codigo,
-          nombre: nombreVisible(eq),
-          modelo: eq.modelo,
-          serial: eq.serial,
-          ubicacion: eq.ubicacion,
-        },
-        tipoEquipo: detalle.tipoEquipo,
-        inspeccionVisual: detalle.inspeccionVisual,
-        rutina: detalle.rutina,
-        medicionesMecanicas: detalle.medicionesMecanicas,
-        medicionesElectricas: detalle.medicionesElectricas,
-        monitoreo: detalle.monitoreo,
-        analisis: detalle.analisis,
-        correctivos: detalle.correctivos,
-        observaciones: detalle.observaciones,
-        // Las evidencias se leen de S3 con enlaces temporales.
-        fotosEntrada: detalle.urls.fotosEntrada,
-        fotosSalida: detalle.urls.fotosSalida,
-        firma: detalle.firmaTecnico && {
-          nombre: detalle.firmaTecnico.nombre,
-          font: fuente(detalle.firmaTecnico.estilo),
-          fecha: detalle.firmaTecnico.fecha,
-        },
-        firmaCliente: detalle.firmaCliente && {
-          nombre: detalle.firmaCliente.nombre,
-          cargo: detalle.firmaCliente.cargo,
-          font: fuente(detalle.firmaCliente.estilo),
-          fecha: detalle.firmaCliente.fecha,
-        },
-      },
-      { descargar },
-    )
-  }
-
   const descargarPdf = async (revision: Revision) => {
     setOcupado(revision.id)
     setAviso(null)
     setError(null)
     try {
-      await construirPdf(revision, true)
+      const actual = await descargarReporte(revision)
+      setRevisiones((rs) => rs.map((r) => r.id === actual.id ? actual : r))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo generar el PDF')
     } finally {
@@ -167,12 +114,12 @@ export function ClientePortalPage() {
       setRevisiones((rs) => rs.map((r) => (r.id === firmada.id ? firmada : r)))
 
       // Se rehace el documento para que quede con las dos firmas.
-      const pdf = await construirPdf(firmada, false)
-      await api.revisiones.subirPdf(revision.equipoId, revision.id, pdf)
+      const archivada = await archivarReporte(revision.equipoId, revision.id)
+      setRevisiones((rs) => rs.map((r) => r.id === archivada.id ? archivada : r))
 
-      setAviso(`Reporte ${firmada.consecutivo} firmado correctamente.`)
+      setAviso(`Reporte ${firmada.consecutivo} firmado y PDF actualizado en S3.`)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar la firma')
+      setError(`${e instanceof Error ? e.message : 'No se pudo completar el proceso'}. Si la firma ya aparece registrada, pulse Descargar PDF para reintentar el archivado actualizado.`)
       await cargar()
     } finally {
       setOcupado(null)
@@ -361,6 +308,7 @@ export function ClientePortalPage() {
                         </span>
                         {nombreVisible(eq)}
                       </span>
+                      <span className="mt-1 block text-xs font-medium text-zinc-500">Contrato: {contratos.find((c) => c.id === eq.contratoId)?.codigo ?? 'Pendiente de asignación'}</span>
                       <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
                         <MapPin className="size-3" />
                         {eq.ubicacion}

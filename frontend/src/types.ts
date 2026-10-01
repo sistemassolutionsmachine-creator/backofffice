@@ -12,6 +12,24 @@ export interface Empresa {
 }
 
 /**
+ * Contrato de mantenimiento con una empresa.
+ *
+ * Una empresa puede tener varios contratos a lo largo del tiempo; cada
+ * equipo queda demarcado bajo el contrato con el que entró.
+ */
+export interface Contrato {
+  id: string
+  empresaId: string
+  /** Identificador corto del contrato: CT-2026-A1B2. */
+  codigo: string
+  /** Descripción: "Mantenimiento HVAC 2026". */
+  nombre: string
+  fechaInicio: string
+  fechaFin: string | null
+  estado: 'activo' | 'finalizado'
+}
+
+/**
  * Ficha de un equipo.
  *
  * Los campos replican el cuadro de equipos que maneja la empresa, de modo que
@@ -20,6 +38,8 @@ export interface Empresa {
 export interface Equipo {
   id: string
   empresaId: string
+  /** Contrato bajo el que entró el equipo. Null en inventarios antiguos. */
+  contratoId: string | null
   /** Identificador impreso en la etiqueta QR. Único en todo el inventario. */
   codigo: string
   /** Sistema al que pertenece: VRF Samsung, CHWS, Ventilación mecánica… */
@@ -88,6 +108,10 @@ export interface Revision {
   fotosEntrada: string[]
   fotosSalida: string[]
   pdfKey: string | null
+  /** Estado en que el técnico dejó el equipo. Null en revisiones antiguas. */
+  estadoEquipo?: EstadoEquipo | null
+  documentoVersion?: number
+  pdfVersion?: number
   firmaTecnico: { nombre: string; estilo: string; fecha: string } | null
   firmaCliente: {
     nombre: string
@@ -117,4 +141,10 @@ export interface Usuario {
   empresaId?: string
   estado: 'activo' | 'inactivo'
   ultimoAcceso: string | null
+  /** Administrador protegido: desactivarlo exige escribir una confirmación. */
+  superadmin?: boolean
+  /** Aún no ha definido su PIN desde el enlace de activación. */
+  pendienteActivacion?: boolean
+  /** Firma digital guardada: no se vuelve a pedir en cada sesión. */
+  firma?: { nombre: string; estilo: string; cargo?: string } | null
 }

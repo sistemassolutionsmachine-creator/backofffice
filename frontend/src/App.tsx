@@ -7,6 +7,7 @@ import { EquipoNuevoPage } from './pages/EquipoNuevoPage'
 import { EquiposImportarPage } from './pages/EquiposImportarPage'
 import { EquipoDetallePage } from './pages/EquipoDetallePage'
 import { EmpresasPage } from './pages/EmpresasPage'
+import { ContratosPage } from './pages/ContratosPage'
 import { EscanearPage } from './pages/EscanearPage'
 import { RevisionFormPage } from './pages/RevisionFormPage'
 import { HistorialPage } from './pages/HistorialPage'
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/equipos/importar" element={<EquiposImportarPage />} />
           <Route path="/equipos/:id" element={<EquipoDetallePage />} />
           <Route path="/empresas" element={<EmpresasPage />} />
+          <Route path="/contratos" element={<ContratosPage />} />
           <Route path="/escanear" element={<EscanearPage />} />
           <Route path="/revisiones/nueva" element={<RevisionFormPage />} />
           <Route path="/historial" element={<HistorialPage />} />

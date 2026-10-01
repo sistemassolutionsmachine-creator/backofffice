@@ -14,6 +14,7 @@ import {
  *  Entidad   | PK                  | SK                      | GSI1PK            | GSI1SK                  | GSI2PK     | GSI2SK
  *  ----------|---------------------|-------------------------|-------------------|-------------------------|------------|------------------
  *  Empresa   | EMPRESA#<id>        | META                    | —                 | —                       | T#EMPRESA  | <nombre>
+ *  Contrato  | CONTRATO#<id>       | META                    | EMPRESA#<empId>   | CONTRATO#<codigo>       | T#CONTRATO | <inicio>#<id>
  *  Equipo    | EQUIPO#<id>         | META                    | EMPRESA#<empId>   | EQUIPO#<codigo>         | T#EQUIPO   | <codigo>
  *  Usuario   | USUARIO#<id>        | META                    | —                 | —                       | T#USUARIO  | <usuario>
  *  Revision  | EQUIPO#<equipoId>   | REVISION#<fecha>#<id>   | EMPRESA#<empId>   | REVISION#<fecha>#<id>   | T#REVISION | <fecha>#<id>
@@ -31,6 +32,7 @@ export const ddb = DynamoDBDocumentClient.from(client, {
 
 export const k = {
   empresa: (id: string) => ({ PK: `EMPRESA#${id}`, SK: 'META' }),
+  contrato: (id: string) => ({ PK: `CONTRATO#${id}`, SK: 'META' }),
   equipo: (id: string) => ({ PK: `EQUIPO#${id}`, SK: 'META' }),
   usuario: (id: string) => ({ PK: `USUARIO#${id}`, SK: 'META' }),
   revision: (equipoId: string, fecha: string, id: string) => ({
@@ -107,6 +109,7 @@ export async function query<T>(o: OpcionesQuery): Promise<T[]> {
     new QueryCommand({
       TableName: TABLE,
       IndexName: o.index,
+      ConsistentRead: !o.index,
       KeyConditionExpression: expr,
       ExpressionAttributeNames: names,
       ExpressionAttributeValues: values,

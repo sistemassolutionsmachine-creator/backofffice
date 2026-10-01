@@ -6,7 +6,6 @@ import {
   Building2,
   ClipboardList,
   Download,
-  FileText,
   MapPin,
   Printer,
   Camera,
@@ -15,10 +14,12 @@ import {
   Button,
   Card,
   EstadoEquipoBadge,
+  EstadoEquipoPunto,
   EstadoRevisionBadge,
   TipoServicioBadge,
 } from '../components/ui'
 import { api } from '../api/client'
+import { DescargarReporteButton } from '../components/DescargarReporteButton'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
@@ -27,7 +28,7 @@ import type { Revision } from '../types'
 
 export function EquipoDetallePage() {
   const { id } = useParams()
-  const { getEquipo, getEmpresa } = useData()
+  const { getEquipo, getEmpresa, contratos } = useData()
   const qrRef = useRef<HTMLDivElement>(null)
   const equipo = getEquipo(id ?? '')
   const [historial, setHistorial] = useState<Revision[]>([])
@@ -61,6 +62,7 @@ export function EquipoDetallePage() {
   }
 
   const empresa = getEmpresa(equipo.empresaId)
+  const contrato = contratos.find((c) => c.id === equipo.contratoId)
   // Solo se listan los campos con contenido: la ficha varía mucho entre
   // un extractor y una condensadora.
   const specs = (
@@ -114,6 +116,10 @@ export function EquipoDetallePage() {
         </Link>
       </div>
 
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div><p className="text-xs font-semibold text-zinc-500">Contrato de ingreso</p><p className="mt-1 text-sm font-bold text-zinc-900">{contrato ? `${contrato.codigo} · ${contrato.nombre}` : 'Pendiente de asignación'}</p></div>
+        <Link to={`/contratos?empresa=${equipo.empresaId}`} className="text-sm font-semibold text-brand-700">Ver contratos →</Link>
+      </Card>
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Ficha técnica */}
         <Card className="p-4 sm:p-5 lg:col-span-2">
@@ -174,6 +180,8 @@ export function EquipoDetallePage() {
                   marginSize={0}
                 />
               </div>
+              <div className="mx-auto mt-3 h-px w-24 bg-zinc-200" />
+              <p className="mt-2 text-xs font-bold text-zinc-900">Solutions Machine</p>
             </div>
           </div>
           <div className="mt-4 flex w-full gap-2">
@@ -222,11 +230,12 @@ export function EquipoDetallePage() {
           </div>
         )}
 
-        <ol className="relative space-y-5 border-l-2 border-zinc-100 pl-5">
+        {/* Móvil: línea de tiempo */}
+        <ol className="relative space-y-5 border-l-2 border-zinc-100 pl-5 md:hidden">
           {historial.map((r) => (
             <li key={r.id} className="relative">
               <span className="absolute top-1.5 -left-[27px] size-3 rounded-full border-2 border-white bg-brand-600 ring-1 ring-zinc-200" />
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-bold text-zinc-900">
@@ -235,7 +244,12 @@ export function EquipoDetallePage() {
                     <TipoServicioBadge tipo={r.tipo} />
                     <EstadoRevisionBadge estado={r.estado} />
                   </div>
-                  <p className="mt-1.5 text-sm text-zinc-600">{r.observaciones}</p>
+                  <p className="mt-2">
+                    <EstadoEquipoPunto estado={r.estadoEquipo} />
+                  </p>
+                  {r.observaciones && (
+                    <p className="mt-1.5 text-sm text-zinc-600">{r.observaciones}</p>
+                  )}
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
                     <span>{r.tecnico}</span>
                     <span>{formatFecha(r.fecha)}</span>
@@ -243,22 +257,66 @@ export function EquipoDetallePage() {
                       <Camera className="size-3.5" />
                       {r.fotosEntrada.length + r.fotosSalida.length} fotos
                     </span>
-                    {r.firmaTecnico && <span>Firmado</span>}
                   </p>
                 </div>
-                {r.estado === 'completado' && (
-                  <button
-                    type="button"
-                    className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg px-2.5 py-1.5 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
-                  >
-                    <FileText className="size-4" />
-                    Ver PDF
-                  </button>
-                )}
+                {r.estado === 'completado' && <DescargarReporteButton revision={r} />}
               </div>
             </li>
           ))}
         </ol>
+
+        {/* Escritorio: tabla con el estado en que quedó el equipo */}
+        {historial.length > 0 && (
+          <div className="hidden overflow-x-auto rounded-xl border border-zinc-200 md:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                  <th className="px-4 py-3">Consecutivo</th>
+                  <th className="px-4 py-3">Servicio</th>
+                  <th className="px-4 py-3">Fecha</th>
+                  <th className="px-4 py-3">Técnico</th>
+                  <th className="px-4 py-3">Estado del equipo</th>
+                  <th className="px-4 py-3">Reporte</th>
+                  <th className="px-4 py-3 text-right">PDF</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {historial.map((r) => (
+                  <tr key={r.id} className="align-top transition-colors hover:bg-zinc-50/70">
+                    <td className="px-4 py-3.5">
+                      <span className="font-mono font-bold whitespace-nowrap text-zinc-900">
+                        {r.consecutivo}
+                      </span>
+                      {r.observaciones && (
+                        <p className="mt-1 line-clamp-2 max-w-56 text-xs text-zinc-500">
+                          {r.observaciones}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <TipoServicioBadge tipo={r.tipo} />
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap text-zinc-600">
+                      {formatFecha(r.fecha)}
+                    </td>
+                    <td className="px-4 py-3.5 text-zinc-600">{r.tecnico}</td>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <EstadoEquipoPunto estado={r.estadoEquipo} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <EstadoRevisionBadge estado={r.estado} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex justify-end">
+                        {r.estado === 'completado' && <DescargarReporteButton revision={r} />}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )

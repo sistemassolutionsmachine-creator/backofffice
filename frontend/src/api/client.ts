@@ -1,4 +1,5 @@
 import type {
+  Contrato,
   Empresa,
   Equipo,
   Revision,
@@ -96,7 +97,7 @@ export interface RespuestaLogin {
 export interface Invitacion {
   correoEnviado: boolean
   motivo?: string
-  /** Presente solo si el correo no pudo enviarse. */
+  /** Alternativa manual para el administrador, incluso si el envío fue aceptado. */
   enlace?: string
 }
 
@@ -139,6 +140,16 @@ export const api = {
     eliminar: (id: string) => del(`/empresas/${id}`),
   },
 
+  /* ---------- Contratos ---------- */
+  contratos: {
+    listar: (empresaId?: string) =>
+      get<Contrato[]>(empresaId ? `/contratos?empresa=${empresaId}` : '/contratos'),
+    crear: (datos: Partial<Contrato>) => post<Contrato>('/contratos', datos),
+    actualizar: (id: string, datos: Partial<Contrato>) =>
+      put<Contrato>(`/contratos/${id}`, datos),
+    eliminar: (id: string) => del(`/contratos/${id}`),
+  },
+
   /* ---------- Equipos ---------- */
   equipos: {
     listar: (empresaId?: string) =>
@@ -150,14 +161,16 @@ export const api = {
     actualizar: (id: string, datos: Partial<Equipo>) =>
       put<Equipo>(`/equipos/${id}`, datos),
     eliminar: (id: string) => del(`/equipos/${id}`),
-    /** Carga masiva. La empresa se elige aquí, no viene en el archivo. */
+    /** Carga masiva. Empresa y contrato se eligen aquí, no en el archivo. */
     importar: (
       empresaId: string,
       equipos: Partial<Equipo>[],
       actualizarExistentes: boolean,
+      contratoId?: string,
     ) =>
       post<ResultadoImportacion>('/equipos/importar', {
         empresaId,
+        contratoId,
         equipos,
         actualizarExistentes,
       }),
@@ -207,10 +220,10 @@ export const api = {
     },
 
     /** Archiva el PDF del reporte en S3. */
-    subirPdf: async (equipoId: string, revisionId: string, pdf: Blob) => {
+    subirPdf: async (equipoId: string, revisionId: string, pdf: Blob, version: number) => {
       const { url, clave } = await post<{ url: string; clave: string }>(
         '/revisiones/pdf',
-        { equipoId, revisionId },
+        { equipoId, revisionId, version },
       )
       const r = await fetch(url, {
         method: 'PUT',
@@ -218,19 +231,23 @@ export const api = {
         body: pdf,
       })
       if (!r.ok) throw new ErrorApi(r.status, 'No se pudo archivar el PDF')
-      return clave
+      return put<Revision>('/revisiones/pdf/confirmar', { equipoId, revisionId, clave, version })
     },
   },
 
   /* ---------- Usuarios ---------- */
   usuarios: {
     listar: () => get<Usuario[]>('/usuarios'),
+    /** Guarda la firma digital del usuario con sesión iniciada. */
+    guardarFirma: (firma: { nombre: string; estilo: string; cargo?: string }) =>
+      put<Usuario>('/usuarios/firma', firma),
     /**
-     * Crea el usuario y dispara la invitación. Si el correo no pudo salir,
-     * la respuesta trae el enlace para entregarlo por otro medio.
+     * Crea el usuario y dispara la invitación. Devuelve también el enlace
+     * alternativo para que el administrador pueda compartirlo.
      */
     crear: (datos: Partial<Usuario>) => post<UsuarioCreado>('/usuarios', datos),
-    actualizar: (id: string, datos: Partial<Usuario>) =>
+    /** `confirmacion` es la frase escrita para acciones sobre un superadministrador. */
+    actualizar: (id: string, datos: Partial<Usuario> & { confirmacion?: string }) =>
       put<Usuario>(`/usuarios/${id}`, datos),
     reiniciarPin: (id: string) => post<Invitacion>(`/usuarios/${id}/pin`),
     eliminar: (id: string) => del(`/usuarios/${id}`),

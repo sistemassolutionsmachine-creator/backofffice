@@ -7,7 +7,8 @@ import type { Empresa, Equipo } from '../types'
  *
  * La etiqueta lleva el nombre de la empresa y el identificador sobre el
  * código, de modo que el técnico sepa qué está escaneando incluso si la
- * cámara falla o la etiqueta se deteriora.
+ * cámara falla o la etiqueta se deteriora. Debajo va la marca Solutions
+ * Machine.
  */
 
 /** Dominio del portal. Los QR apuntan aquí, así que debe ser el de producción. */
@@ -83,8 +84,12 @@ export async function generarEtiquetaQr(
     ANCHO - MARGEN * 2,
   )
 
-  const altoCabecera = 10 + 48 + lineasEmpresa.length * 52 + 96
-  const alto = altoCabecera + qr.height + MARGEN
+  // El espacio extra bajo el código deja ver los guiones bajos (IFF_MPORTH_1):
+  // sin él, el QR los tapa.
+  const altoCabecera = 10 + 48 + lineasEmpresa.length * 52 + 130
+  // Pie con la marca del prestador del servicio, debajo del código.
+  const altoPie = 150
+  const alto = altoCabecera + qr.height + altoPie
 
   const canvas = document.createElement('canvas')
   canvas.width = ANCHO
@@ -119,6 +124,18 @@ export async function generarEtiquetaQr(
   // Código QR
   ctx.drawImage(qr, centro - qr.width / 2, altoCabecera)
 
+  // Marca: Solutions Machine
+  const finQr = altoCabecera + qr.height
+  ctx.strokeStyle = '#e4e4e7'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(centro - 160, finQr + 42)
+  ctx.lineTo(centro + 160, finQr + 42)
+  ctx.stroke()
+  ctx.fillStyle = TINTA
+  ctx.font = '700 46px Inter, Arial, sans-serif'
+  ctx.fillText('Solutions Machine', centro, finQr + 108)
+
   return new Promise<Blob>((res, rej) => {
     canvas.toBlob(
       (b) => (b ? res(b) : rej(new Error('No se pudo crear la imagen'))),
@@ -151,9 +168,11 @@ export async function descargarEtiquetaQr(codigo: string, nombreEmpresa: string)
 export async function descargarEtiquetasDeEmpresa(
   empresa: Empresa,
   equipos: Equipo[],
-  onProgreso?: (hechos: number, total: number) => void,
+  onProgreso?: (hechos: number, total: number, fase: 'etiquetas' | 'comprimiendo', porcentaje: number) => void,
 ) {
   if (equipos.length === 0) throw new Error('Esta empresa no tiene equipos')
+  onProgreso?.(0, equipos.length, 'etiquetas', 0)
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
   const zip = new JSZip()
   const carpeta = zip.folder(`QR ${empresa.nombre}`)
@@ -164,10 +183,13 @@ export async function descargarEtiquetasDeEmpresa(
     // El nombre del archivo incluye el equipo para identificarlo sin abrirlo.
     const limpio = eq.nombre.replace(/[^\w\s-]/g, '').trim().slice(0, 40)
     carpeta.file(`${eq.codigo} - ${limpio}.png`, blob)
-    onProgreso?.(i + 1, equipos.length)
+    onProgreso?.(i + 1, equipos.length, 'etiquetas', ((i + 1) / equipos.length) * 85)
   }
 
-  const contenido = await zip.generateAsync({ type: 'blob' })
+  onProgreso?.(equipos.length, equipos.length, 'comprimiendo', 85)
+  const contenido = await zip.generateAsync({ type: 'blob' }, ({ percent }) => {
+    onProgreso?.(equipos.length, equipos.length, 'comprimiendo', 85 + percent * 0.15)
+  })
   const fecha = new Date().toISOString().slice(0, 10)
   descargar(contenido, `QR ${empresa.nombre} ${fecha}.zip`)
 }

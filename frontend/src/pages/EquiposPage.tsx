@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
+  ArrowLeft,
   Building2,
   Camera,
-  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FileText,
+  MapPin,
   Plus,
   Server,
   Upload,
@@ -15,6 +17,7 @@ import {
   Button,
   Card,
   PageHeader,
+  SearchInput,
   StatCard,
   TipoServicioBadge,
   cx,
@@ -23,7 +26,7 @@ import { useData } from '../store/DataContext'
 import { api } from '../api/client'
 import { fechaCorta } from '../utils/fechas'
 import { nombreVisible } from '../types'
-import type { EstadoEquipo, Equipo, Revision } from '../types'
+import type { Empresa, EstadoEquipo, Equipo, Revision } from '../types'
 
 const ESTADOS: Record<
   EstadoEquipo,
@@ -41,58 +44,108 @@ const PESO: Record<EstadoEquipo, number> = {
   operativo: 2,
 }
 
+const POR_PAGINA = 25
+
 function footerDe(eq: Equipo): { label: string; valor: string } {
   if (eq.estado === 'fuera_servicio')
     return { label: 'Correctivo en curso', valor: `desde ${fechaCorta(eq.ultimaRevision)}` }
   if (eq.estado === 'mantenimiento')
     return { label: 'Revisión en curso', valor: fechaCorta(eq.ultimaRevision) }
-  if (!eq.ultimaRevision) return { label: 'Última revisión', valor: 'sin registros' }
+  if (!eq.ultimaRevision) return { label: 'Última revisión', valor: '—' }
   return { label: 'Última revisión', valor: fechaCorta(eq.ultimaRevision) }
 }
 
-function EquipoRow({ eq, nRevisiones }: { eq: Equipo; nRevisiones: number }) {
+function EquipoCard({
+  eq,
+  nRevisiones,
+  empresaNombre,
+  contratoNombre,
+  indice,
+}: {
+  eq: Equipo
+  nRevisiones: number
+  /** Se muestra al buscar en todo el inventario, para ubicar el resultado. */
+  empresaNombre?: string
+  contratoNombre?: string
+  /** Posición en la cuadrícula: define el retraso de la animación de entrada. */
+  indice: number
+}) {
   const est = ESTADOS[eq.estado]
   const footer = footerDe(eq)
   return (
     <Link
       to={`/equipos/${eq.id}`}
-      className={cx(
-        'flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 sm:px-5',
-        eq.estado === 'fuera_servicio' && 'bg-brand-50/50 hover:bg-brand-50',
-      )}
+      viewTransition
+      className="anim-entrada block"
+      style={{ animationDelay: `${Math.min(indice, 12) * 35}ms` }}
     >
-      <span className={cx('size-2 shrink-0 rounded-full', est.dot)} title={est.label} />
-      <span className="hidden w-20 shrink-0 font-mono text-xs font-semibold text-zinc-500 sm:block">
-        {eq.codigo}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-zinc-900">
-          {nombreVisible(eq)}
-        </span>
-        <span className="block truncate text-xs text-zinc-500">
-          <span className="font-mono sm:hidden">{eq.codigo} · </span>
-          {eq.ubicacion}
-        </span>
-      </span>
-      <span
-        className="hidden shrink-0 items-center gap-1 text-xs text-zinc-400 md:flex"
-        title={`${nRevisiones} ${nRevisiones === 1 ? 'revisión registrada' : 'revisiones registradas'}`}
+      <Card
+        className={cx(
+          'group flex h-full flex-col p-4 transition-all duration-200',
+          'hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg',
+          eq.estado === 'fuera_servicio' &&
+            'border-brand-300 ring-1 ring-brand-200 hover:border-brand-400',
+        )}
       >
-        <FileText className="size-3.5" />
-        {nRevisiones}
-      </span>
-      <span className="shrink-0 text-right">
-        <span className="hidden text-[11px] text-zinc-500 sm:block">{footer.label}</span>
-        <span
-          className={cx(
-            'block text-xs font-bold',
-            eq.estado === 'operativo' ? 'text-zinc-900' : est.text,
-          )}
-        >
-          {footer.valor}
-        </span>
-      </span>
-      <ChevronRight className="size-4 shrink-0 text-zinc-300" />
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate rounded-md bg-zinc-100 px-2 py-1 font-mono text-[11px] font-bold text-zinc-600">
+            {eq.codigo}
+          </span>
+          <span
+            className={cx(
+              'flex shrink-0 items-center gap-1.5 text-[11px] font-semibold',
+              est.text,
+            )}
+          >
+            <span className={cx('size-1.5 rounded-full', est.dot)} />
+            {est.label}
+          </span>
+        </div>
+
+        <p className="mt-3 line-clamp-2 text-sm leading-snug font-bold text-zinc-900 transition-colors group-hover:text-brand-700">
+          {nombreVisible(eq)}
+        </p>
+        <p className="mt-1.5 flex items-center gap-1 truncate text-xs text-zinc-500">
+          <MapPin className="size-3 shrink-0 text-zinc-400" />
+          <span className="truncate">{eq.ubicacion}</span>
+        </p>
+        {(eq.marca || eq.modelo) && (
+          <p className="mt-0.5 truncate text-xs text-zinc-400">
+            {[eq.marca, eq.modelo].filter(Boolean).join(' · ')}
+          </p>
+        )}
+        {empresaNombre && (
+          <p className="mt-1.5 truncate text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">
+            {empresaNombre}
+          </p>
+        )}
+
+        <p className="mt-3 mb-4 truncate rounded-lg bg-zinc-50 px-2 py-1.5 text-xs font-medium text-zinc-600" title={contratoNombre}>
+          {contratoNombre ?? 'Pendiente de contrato'}
+        </p>
+        <div className="mt-auto flex items-end justify-between gap-2 border-t border-zinc-100 pt-3">
+          <span>
+            <span className="block text-[10px] tracking-wide text-zinc-400 uppercase">
+              {footer.label}
+            </span>
+            <span
+              className={cx(
+                'block text-xs font-bold',
+                eq.estado === 'operativo' ? 'text-zinc-900' : est.text,
+              )}
+            >
+              {footer.valor}
+            </span>
+          </span>
+          <span
+            className="flex items-center gap-1 text-xs text-zinc-400"
+            title={`${nRevisiones} ${nRevisiones === 1 ? 'revisión registrada' : 'revisiones registradas'}`}
+          >
+            <FileText className="size-3.5" />
+            {nRevisiones}
+          </span>
+        </div>
+      </Card>
     </Link>
   )
 }
@@ -136,7 +189,7 @@ function ActividadReciente({
                   </span>
                 </div>
                 <p className="mt-1 truncate text-sm font-semibold text-zinc-800">
-                  {eq ? nombreVisible(eq) : "Equipo"}
+                  {eq ? nombreVisible(eq) : 'Equipo'}
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-500">
                   <TipoServicioBadge tipo={r.tipo} />
@@ -150,18 +203,87 @@ function ActividadReciente({
             </li>
           )
         })}
+        {ultimas.length === 0 && (
+          <li className="px-5 py-8 text-center text-sm text-zinc-500">
+            Aún no hay revisiones registradas.
+          </li>
+        )}
       </ul>
     </Card>
   )
 }
 
+/** Tarjeta-resumen de una empresa en la vista general. */
+function EmpresaCard({
+  empresa,
+  lista,
+  indice,
+}: {
+  empresa: Empresa
+  lista: Equipo[]
+  indice: number
+}) {
+  const porEstado = (est: EstadoEquipo) => lista.filter((e) => e.estado === est).length
+  const atencion = porEstado('fuera_servicio') + porEstado('mantenimiento')
+
+  return (
+    <Link
+      to={`/equipos?empresa=${empresa.id}`}
+      viewTransition
+      className="anim-entrada block"
+      style={{ animationDelay: `${Math.min(indice, 8) * 45}ms` }}
+    >
+      <Card
+        className={cx(
+          'group flex h-full flex-col p-4 transition-all duration-200 sm:p-5',
+          'hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg',
+          porEstado('fuera_servicio') > 0 &&
+            'border-brand-300 ring-1 ring-brand-200 hover:border-brand-400',
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <p
+            className="min-w-0 text-sm leading-snug font-bold text-zinc-900 transition-colors group-hover:text-brand-700"
+            style={{ viewTransitionName: `empresa-${empresa.id}` }}
+          >
+            {empresa.nombre}
+          </p>
+          <ChevronRight className="size-4 shrink-0 text-zinc-300 transition-transform group-hover:translate-x-0.5" />
+        </div>
+        <p className="mt-1 text-xs text-zinc-500">
+          {lista.length} {lista.length === 1 ? 'equipo' : 'equipos'}
+          {atencion > 0 ? ` · ${atencion} requieren atención` : lista.length ? ' · todo operativo' : ' · listo para registrar'}
+        </p>
+        <div className="mt-4 flex items-center gap-4 border-t border-zinc-100 pt-3">
+          {(['fuera_servicio', 'mantenimiento', 'operativo'] as const).map(
+            (est) =>
+              porEstado(est) > 0 && (
+                <span
+                  key={est}
+                  className="flex items-center gap-1.5 text-sm font-bold text-zinc-800"
+                  title={ESTADOS[est].label}
+                >
+                  <span className={cx('size-2 rounded-full', ESTADOS[est].dot)} />
+                  {porEstado(est)}
+                </span>
+              ),
+          )}
+        </div>
+      </Card>
+    </Link>
+  )
+}
+
 export function EquiposPage() {
-  const { equipos, empresas, cargando } = useData()
-  const [params] = useSearchParams()
+  const { equipos, empresas, contratos, cargando, error, getEmpresa } = useData()
+  const [params, setParams] = useSearchParams()
   const [filtro, setFiltro] = useState<EstadoEquipo | 'todos'>('todos')
-  const [abiertas, setAbiertas] = useState<Record<string, boolean>>({})
+  const [query, setQuery] = useState('')
+  const [pagina, setPagina] = useState(0)
   const [revisiones, setRevisiones] = useState<Revision[]>([])
   const empresaFiltro = params.get('empresa') ?? ''
+  const contratoFiltro = params.get('contrato') ?? ''
+  const buscando = query.trim().length > 0
 
   // El historial alimenta el panel de actividad y el conteo por equipo.
   useEffect(() => {
@@ -179,6 +301,11 @@ export function EquiposPage() {
     }
   }, [])
 
+  // Cambiar de empresa, búsqueda o filtro vuelve a la primera página.
+  useEffect(() => {
+    setPagina(0)
+  }, [empresaFiltro, contratoFiltro, query, filtro])
+
   const revisionesPorEquipo = useMemo(() => {
     const mapa = new Map<string, number>()
     for (const r of revisiones) {
@@ -187,40 +314,78 @@ export function EquiposPage() {
     return mapa
   }, [revisiones])
 
-  const conteos = useMemo(() => {
-    const base = empresaFiltro
-      ? equipos.filter((e) => e.empresaId === empresaFiltro)
-      : equipos
-    return {
-      todos: base.length,
-      operativo: base.filter((e) => e.estado === 'operativo').length,
-      mantenimiento: base.filter((e) => e.estado === 'mantenimiento').length,
-      fuera_servicio: base.filter((e) => e.estado === 'fuera_servicio').length,
-    }
-  }, [equipos, empresaFiltro])
+  /* Búsqueda por cualquier dato de la ficha del equipo. */
+  const coincide = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return () => true
+    return (e: Equipo) =>
+      [e.codigo, e.nombre, e.tipo, e.sistema, e.ubicacion, e.zona, e.marca, e.modelo, e.serial]
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+  }, [query])
 
-  /* Empresas con sus equipos filtrados; las que tienen fallas, arriba */
-  const grupos = useMemo(() => {
-    return empresas
-      .map((empresa) => {
-        const lista = equipos
-          .filter((e) => e.empresaId === empresa.id)
-          .filter((e) => !empresaFiltro || e.empresaId === empresaFiltro)
-          .filter((e) => filtro === 'todos' || e.estado === filtro)
-          .sort((a, b) => PESO[a.estado] - PESO[b.estado])
-        return { empresa, lista }
-      })
-      .filter((g) => g.lista.length > 0 && (!empresaFiltro || g.empresa.id === empresaFiltro))
-      .sort(
-        (a, b) =>
-          Math.min(...a.lista.map((e) => PESO[e.estado])) -
-          Math.min(...b.lista.map((e) => PESO[e.estado])),
-      )
-  }, [empresas, equipos, filtro, empresaFiltro])
+  /** Equipos dentro del ámbito actual (empresa + búsqueda), sin filtro de estado. */
+  const ambito = useMemo(
+    () =>
+      equipos
+        .filter((e) => !empresaFiltro || e.empresaId === empresaFiltro)
+        .filter((e) => !contratoFiltro || (contratoFiltro === 'pendientes' ? !e.contratoId : e.contratoId === contratoFiltro))
+        .filter(coincide),
+    [equipos, empresaFiltro, contratoFiltro, coincide],
+  )
+
+  /** Y con el filtro de estado aplicado, ordenado: lo que falla primero. */
+  const resultado = useMemo(
+    () =>
+      ambito
+        .filter((e) => filtro === 'todos' || e.estado === filtro)
+        .sort(
+          (a, b) =>
+            PESO[a.estado] - PESO[b.estado] || a.codigo.localeCompare(b.codigo),
+        ),
+    [ambito, filtro],
+  )
+
+  const conteos = {
+    todos: ambito.length,
+    operativo: ambito.filter((e) => e.estado === 'operativo').length,
+    mantenimiento: ambito.filter((e) => e.estado === 'mantenimiento').length,
+    fuera_servicio: ambito.filter((e) => e.estado === 'fuera_servicio').length,
+  }
+
+  /* Resumen por empresa para la vista general. */
+  const grupos = useMemo(
+    () =>
+      empresas
+        .map((empresa) => ({
+          empresa,
+          lista: equipos.filter((e) => e.empresaId === empresa.id),
+        }))
+        .sort(
+          (a, b) =>
+            Math.min(3, ...a.lista.map((e) => PESO[e.estado])) -
+            Math.min(3, ...b.lista.map((e) => PESO[e.estado])),
+        ),
+    [empresas, equipos],
+  )
+
+  const totalPaginas = Math.max(1, Math.ceil(resultado.length / POR_PAGINA))
+  const paginaActual = Math.min(pagina, totalPaginas - 1)
+  const visibles = resultado.slice(
+    paginaActual * POR_PAGINA,
+    (paginaActual + 1) * POR_PAGINA,
+  )
 
   const hoy = new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
   const empresaSel = empresas.find((e) => e.id === empresaFiltro)
   const atencion = conteos.mantenimiento + conteos.fuera_servicio
+
+  /* La lista de equipos solo aparece dentro de una empresa o al buscar. */
+  const mostrarLista = Boolean(empresaFiltro) || Boolean(contratoFiltro) || buscando
+  const contextoAlta = new URLSearchParams()
+  if (empresaFiltro) contextoAlta.set('empresa', empresaFiltro)
+  if (contratos.some((c) => c.id === contratoFiltro && c.estado === 'activo')) contextoAlta.set('contrato', contratoFiltro)
 
   const chips: Array<{ id: EstadoEquipo | 'todos'; label: string; n: number; dot?: string }> = [
     { id: 'todos', label: 'Todos', n: conteos.todos },
@@ -231,22 +396,47 @@ export function EquiposPage() {
 
   return (
     <div className="space-y-5">
+      {empresaSel && (
+        <Link
+          to="/equipos"
+          viewTransition
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-zinc-500 hover:text-zinc-900"
+        >
+          <ArrowLeft className="size-4" />
+          Todas las empresas
+        </Link>
+      )}
+
       <PageHeader
-        title={empresaSel ? empresaSel.nombre : 'Equipos'}
+        title={
+          empresaSel ? (
+            // Mismo nombre de transición que la tarjeta: el título "viaja"
+            // de la cuadrícula al encabezado al entrar a la empresa.
+            <span
+              className="inline-block"
+              style={{ viewTransitionName: `empresa-${empresaSel.id}` }}
+            >
+              {empresaSel.nombre}
+            </span>
+          ) : (
+            'Equipos'
+          )
+        }
         subtitle={
           empresaSel
             ? `${conteos.todos} ${conteos.todos === 1 ? 'equipo' : 'equipos'} · ${hoy}`
-            : `${equipos.length} equipos en ${new Set(equipos.map((e) => e.empresaId)).size} empresas · ${hoy}`
+            : `${equipos.length} equipos en ${grupos.length} empresas · ${hoy}`
         }
         actions={
           <>
-            <Link to="/equipos/importar">
+            {empresaSel && <Link to={`/contratos?empresa=${empresaSel.id}`}><Button variant="secondary"><FileText className="size-4" /> Contratos</Button></Link>}
+            <Link to={`/equipos/importar?${contextoAlta}`}>
               <Button variant="secondary">
                 <Upload className="size-4" />
                 Importar
               </Button>
             </Link>
-            <Link to="/equipos/nuevo">
+            <Link to={`/equipos/nuevo?${contextoAlta}`}>
               <Button>
                 <Plus className="size-4" />
                 Registrar equipo
@@ -256,147 +446,180 @@ export function EquiposPage() {
         }
       />
 
-      {/* Resumen del inventario */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          icon={<Server className="size-5" />}
-          label="Equipos"
-          value={String(equipos.length)}
-          hint="activos registrados"
-          tone="neutral"
-        />
-        <StatCard
-          icon={<Building2 className="size-5" />}
-          label="Empresas"
-          value={String(new Set(equipos.map((e) => e.empresaId)).size)}
-          hint="con equipos a cargo"
-          tone="brand"
-        />
-        <StatCard
-          icon={<FileText className="size-5" />}
-          label="Revisiones"
-          value={String(revisiones.length)}
-          hint="registradas en total"
-          tone="ok"
-        />
-        <StatCard
-          icon={<AlertTriangle className="size-5" />}
-          label="Requieren atención"
-          value={String(atencion)}
-          hint="en revisión o fuera de servicio"
-          tone={atencion > 0 ? 'warn' : 'ok'}
-        />
-      </div>
+      {error && <p role="alert" className="rounded-xl bg-brand-50 p-4 text-sm text-brand-700">{error}</p>}
+      {empresaSel && (
+        <label className="block max-w-lg text-sm font-semibold text-zinc-700">Contrato
+          <select aria-label="Filtrar por contrato" value={contratoFiltro} onChange={(e) => {
+            const nuevos = new URLSearchParams(params)
+            if (e.target.value) nuevos.set('contrato', e.target.value)
+            else nuevos.delete('contrato')
+            setParams(nuevos)
+          }} className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm">
+            <option value="">Todos los contratos</option>
+            {contratos.filter((c) => c.empresaId === empresaSel.id).map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}{c.estado === 'finalizado' ? ' (finalizado)' : ''}</option>)}
+            <option value="pendientes">Pendientes de contrato</option>
+          </select>
+        </label>
+      )}
+
+      {/* Resumen del inventario (solo en la vista general) */}
+      {!empresaSel && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            icon={<Server className="size-5" />}
+            label="Equipos"
+            value={String(equipos.length)}
+            hint="activos registrados"
+            tone="neutral"
+          />
+          <StatCard
+            icon={<Building2 className="size-5" />}
+            label="Empresas"
+            value={String(grupos.length)}
+            hint="con equipos a cargo"
+            tone="brand"
+          />
+          <StatCard
+            icon={<FileText className="size-5" />}
+            label="Revisiones"
+            value={String(revisiones.length)}
+            hint="registradas en total"
+            tone="ok"
+          />
+          <StatCard
+            icon={<AlertTriangle className="size-5" />}
+            label="Requieren atención"
+            value={String(atencion)}
+            hint="en revisión o fuera de servicio"
+            tone={atencion > 0 ? 'warn' : 'ok'}
+          />
+        </div>
+      )}
 
       <div className="grid items-start gap-5 xl:grid-cols-[1fr_340px]">
         {/* Columna principal */}
         <div className="space-y-4">
-          {/* Filtros por estado */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {chips.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setFiltro(c.id)}
-                className={cx(
-                  'flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors',
-                  filtro === c.id
-                    ? 'bg-ink-950 text-white'
-                    : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50',
-                )}
-              >
-                {c.dot && <span className={cx('size-1.5 rounded-full', c.dot)} />}
-                {c.label}
-                <span
-                  className={cx('font-bold', filtro === c.id ? 'text-white' : 'text-zinc-900')}
-                >
-                  {c.n}
-                </span>
-              </button>
-            ))}
-          </div>
+          {/* Búsqueda */}
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={
+              empresaSel
+                ? `Buscar en ${empresaSel.nombre}…`
+                : 'Buscar en todo el inventario: código, nombre, ubicación…'
+            }
+          />
 
-          {/* Panel por empresa (acordeón) */}
-          {grupos.map(({ empresa, lista }) => {
-            const abierta = abiertas[empresa.id] ?? true
-            const porEstado = (est: EstadoEquipo) =>
-              lista.filter((e) => e.estado === est).length
-
-            return (
-              <Card key={empresa.id} className="overflow-hidden">
-                <div className="flex items-center gap-1 pr-3 sm:pr-4">
-                  <button
-                    type="button"
-                    onClick={() => setAbiertas((a) => ({ ...a, [empresa.id]: !abierta }))}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50 sm:px-5"
-                  >
-                    <ChevronDown
-                      className={cx(
-                        'size-4 shrink-0 text-zinc-400 transition-transform',
-                        !abierta && '-rotate-90',
-                      )}
-                    />
-                    <span className="truncate text-sm font-bold text-zinc-900">
-                      {empresa.nombre}
-                    </span>
-                    <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">
-                      {lista.length} {lista.length === 1 ? 'equipo' : 'equipos'}
-                    </span>
-                    {/* Mini-conteo por estado */}
-                    <span className="ml-1 flex shrink-0 items-center gap-2">
-                      {(['fuera_servicio', 'mantenimiento', 'operativo'] as const).map(
-                        (est) =>
-                          porEstado(est) > 0 && (
-                            <span
-                              key={est}
-                              className="flex items-center gap-1 text-xs font-bold text-zinc-700"
-                              title={ESTADOS[est].label}
-                            >
-                              <span
-                                className={cx('size-1.5 rounded-full', ESTADOS[est].dot)}
-                              />
-                              {porEstado(est)}
-                            </span>
-                          ),
-                      )}
-                    </span>
-                  </button>
-                  {!empresaFiltro && (
-                    <Link
-                      to={`/equipos?empresa=${empresa.id}`}
-                      className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-semibold text-brand-600 transition-colors hover:bg-brand-50 hover:text-brand-700"
-                    >
-                      Ver empresa →
-                    </Link>
+          {/* Filtros por estado (solo cuando hay lista visible) */}
+          {mostrarLista && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {chips.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setFiltro(c.id)}
+                  className={cx(
+                    'flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors',
+                    filtro === c.id
+                      ? 'bg-ink-950 text-white'
+                      : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-50',
                   )}
-                </div>
+                >
+                  {c.dot && <span className={cx('size-1.5 rounded-full', c.dot)} />}
+                  {c.label}
+                  <span
+                    className={cx('font-bold', filtro === c.id ? 'text-white' : 'text-zinc-900')}
+                  >
+                    {c.n}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
-                {abierta && (
-                  <div className="divide-y divide-zinc-100 border-t border-zinc-100">
-                    {lista.map((eq) => (
-                      <EquipoRow
-                        key={eq.id}
-                        eq={eq}
-                        nRevisiones={revisionesPorEquipo.get(eq.id) ?? 0}
-                      />
-                    ))}
+          {/* Vista general: una tarjeta por empresa, sin equipos sueltos */}
+          {!mostrarLista && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {grupos.map(({ empresa, lista }, i) => (
+                <EmpresaCard
+                  key={empresa.id}
+                  empresa={empresa}
+                  lista={lista}
+                  indice={i}
+                />
+              ))}
+              {grupos.length === 0 && (
+                <Card className="p-10 text-center sm:col-span-2">
+                  <p className="text-sm font-semibold text-zinc-900">
+                    {cargando ? 'Cargando equipos…' : 'Sin equipos registrados'}
+                  </p>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Cuadrícula paginada: dentro de una empresa o al buscar */}
+          {mostrarLista && (
+            <>
+              <div className="flex items-center justify-between px-0.5">
+                <p className="text-xs font-semibold text-zinc-500">
+                  {resultado.length === 0
+                    ? 'Sin resultados'
+                    : `${paginaActual * POR_PAGINA + 1}–${Math.min(
+                        (paginaActual + 1) * POR_PAGINA,
+                        resultado.length,
+                      )} de ${resultado.length} equipos`}
+                </p>
+                {totalPaginas > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label="Página anterior"
+                      disabled={paginaActual === 0}
+                      onClick={() => setPagina(paginaActual - 1)}
+                      className="rounded-lg bg-white p-1.5 text-zinc-500 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 disabled:opacity-30"
+                    >
+                      <ChevronLeft className="size-4" />
+                    </button>
+                    <span className="px-1.5 text-xs font-semibold text-zinc-600 tabular-nums">
+                      {paginaActual + 1} / {totalPaginas}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Página siguiente"
+                      disabled={paginaActual >= totalPaginas - 1}
+                      onClick={() => setPagina(paginaActual + 1)}
+                      className="rounded-lg bg-white p-1.5 text-zinc-500 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 disabled:opacity-30"
+                    >
+                      <ChevronRight className="size-4" />
+                    </button>
                   </div>
                 )}
-              </Card>
-            )
-          })}
+              </div>
 
-          {grupos.length === 0 && (
-            <Card className="p-10 text-center">
-              <p className="text-sm font-semibold text-zinc-900">
-                {cargando ? 'Cargando equipos…' : 'Sin resultados'}
-              </p>
-              {!cargando && (
-                <p className="mt-1 text-sm text-zinc-500">
-                  No hay equipos con los filtros aplicados.
-                </p>
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                {visibles.map((eq, i) => (
+                  <EquipoCard
+                    key={eq.id}
+                    eq={eq}
+                    indice={i}
+                    contratoNombre={contratos.find((c) => c.id === eq.contratoId)?.codigo}
+                    nRevisiones={revisionesPorEquipo.get(eq.id) ?? 0}
+                    empresaNombre={
+                      !empresaFiltro ? getEmpresa(eq.empresaId)?.nombre : undefined
+                    }
+                  />
+                ))}
+              </div>
+
+              {resultado.length === 0 && (
+                <Card className="p-10 text-center">
+                  <p className="text-sm text-zinc-500">
+                    No hay equipos que coincidan con la búsqueda.
+                  </p>
+                </Card>
               )}
-            </Card>
+            </>
           )}
         </div>
 
