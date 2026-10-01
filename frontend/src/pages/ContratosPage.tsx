@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Plus, Upload } from 'lucide-react'
 import { Button, Card, PageHeader, SearchInput, cx } from '../components/ui'
 import { useData } from '../store/DataContext'
+import { Selector } from '../components/Selector'
 import { nombreVisible, type Contrato } from '../types'
 
 const inputCls = 'mt-1.5 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm'
@@ -87,15 +88,20 @@ export function ContratosPage() {
       </Link>
       <PageHeader title="Contratos" subtitle={empresa?.nombre ?? 'Organice el inventario por empresa y contrato de ingreso.'}
         actions={<Button disabled={!empresaId || ocupado} onClick={() => abrir()}><Plus className="size-4" /> Nuevo contrato</Button>} />
-      <label className="block max-w-lg text-sm font-medium text-zinc-700">Empresa
-        <select className={inputCls} value={empresaId} disabled={ocupado} onChange={(e) => {
-          setParams(e.target.value ? { empresa: e.target.value } : {})
-          setFormulario(false); setDestino(''); setSeleccion([]); setQuery(''); setError(null); setAviso('')
-        }}>
-          <option value="">Seleccione una empresa…</option>
-          {empresas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-        </select>
-      </label>
+      <div className="block max-w-lg text-sm font-medium text-zinc-700">
+        <span className="mb-1.5 block">Empresa</span>
+        <Selector
+          ariaLabel="Empresa"
+          value={empresaId}
+          disabled={ocupado}
+          placeholder="Seleccione una empresa…"
+          opciones={empresas.map((e) => ({ valor: e.id, etiqueta: e.nombre }))}
+          onChange={(v) => {
+            setParams(v ? { empresa: v } : {})
+            setFormulario(false); setDestino(''); setSeleccion([]); setQuery(''); setError(null); setAviso('')
+          }}
+        />
+      </div>
       {(error || errorDatos) && <p role="alert" className="rounded-xl bg-brand-50 p-4 text-sm text-brand-700">{error || errorDatos}</p>}
       {aviso && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{aviso}</p>}
 
@@ -108,7 +114,18 @@ export function ContratosPage() {
               <label className="text-sm text-zinc-700">Código<input disabled={!!editando} maxLength={80} className={inputCls} value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Automático si se deja vacío" /></label>
               <label className="text-sm text-zinc-700">Fecha de inicio<input required type="date" className={inputCls} value={inicio} onChange={(e) => setInicio(e.target.value)} /></label>
               <label className="text-sm text-zinc-700">Fecha de fin (opcional)<input type="date" min={inicio} className={inputCls} value={fin} onChange={(e) => setFin(e.target.value)} /></label>
-              <label className="text-sm text-zinc-700">Estado<select className={inputCls} value={estado} onChange={(e) => setEstado(e.target.value as Contrato['estado'])}><option value="activo">Activo</option><option value="finalizado">Finalizado</option></select></label>
+              <div className="text-sm text-zinc-700">
+                <span className="mb-1.5 block">Estado</span>
+                <Selector
+                  ariaLabel="Estado del contrato"
+                  value={estado}
+                  onChange={(v) => setEstado(v as Contrato['estado'])}
+                  opciones={[
+                    { valor: 'activo', etiqueta: 'Activo', punto: 'bg-emerald-500' },
+                    { valor: 'finalizado', etiqueta: 'Finalizado', punto: 'bg-zinc-400' },
+                  ]}
+                />
+              </div>
             </fieldset>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="secondary" disabled={ocupado} onClick={() => setFormulario(false)}>Cancelar</Button>
@@ -155,7 +172,19 @@ export function ContratosPage() {
             <div className="max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200">
               {visibles.map((e) => <label key={e.id} className="flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-zinc-50"><input type="checkbox" checked={seleccion.includes(e.id)} onChange={(ev) => setSeleccion((s) => ev.target.checked ? [...s, e.id] : s.filter((id) => id !== e.id))} /><span className="min-w-0"><span className="block truncate font-semibold">{nombreVisible(e)}</span><span className="block truncate text-xs text-zinc-500">{e.codigo} · {e.ubicacion}</span></span></label>)}
             </div>
-            <label className="block text-sm font-medium">Contrato de destino<select className={inputCls} value={destino} onChange={(e) => setDestino(e.target.value)}><option value="">Seleccione un contrato activo…</option>{lista.filter((c) => c.estado === 'activo').map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}</option>)}</select></label>
+            <div className="block text-sm font-medium">
+              <span className="mb-1.5 block">Contrato de destino</span>
+              <Selector
+                ariaLabel="Contrato de destino"
+                value={destino}
+                onChange={setDestino}
+                disabled={ocupado}
+                placeholder="Seleccione un contrato activo…"
+                opciones={lista
+                  .filter((c) => c.estado === 'activo')
+                  .map((c) => ({ valor: c.id, etiqueta: `${c.codigo} · ${c.nombre}` }))}
+              />
+            </div>
             <Button disabled={ocupado || !destino || !seleccion.length} onClick={() => void asignar()}>{ocupado ? 'Asignando…' : `Asignar ${seleccion.length} equipos`}</Button>
           </fieldset>
         </Card>

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, LoaderCircle, Plus, Search, Trash2 } from 'lucide-react'
 import { cx } from './ui'
+import { desplazarLista } from './Selector'
 
 const normalizar = (s: string) =>
   s
@@ -64,6 +65,9 @@ export function SelectCreable({
   const raiz = useRef<HTMLDivElement>(null)
   const buscador = useRef<HTMLInputElement>(null)
   const lista = useRef<HTMLUListElement>(null)
+  const disparador = useRef<HTMLButtonElement>(null)
+  const porTeclado = useRef(false)
+  const [arriba, setArriba] = useState(false)
   const idLista = useId()
   const idOpcion = (i: number) => `${idLista}-${i}`
 
@@ -86,6 +90,8 @@ export function SelectCreable({
   }, [todas, query])
 
   const abrir = () => {
+    const r = disparador.current?.getBoundingClientRect()
+    if (r) setArriba(window.innerHeight - r.bottom < 380 && r.top > window.innerHeight - r.bottom)
     setQuery('')
     setConfirmando(null)
     setErrorEliminar(null)
@@ -134,13 +140,16 @@ export function SelectCreable({
     return () => document.removeEventListener('pointerdown', fuera)
   }, [abierto])
 
-  // Mantiene visible la opción activa al moverse con el teclado.
+  // Al moverse con el teclado, desplaza solo la lista (nunca la página).
   useEffect(() => {
-    if (abierto) document.getElementById(idOpcion(activo))?.scrollIntoView({ block: 'nearest' })
+    if (!abierto || !porTeclado.current) return
+    porTeclado.current = false
+    desplazarLista(lista.current, document.getElementById(idOpcion(activo)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activo, abierto])
 
   const teclado = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') porTeclado.current = true
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActivo((a) => Math.min(a + 1, items.length - 1))
@@ -169,6 +178,7 @@ export function SelectCreable({
     <div ref={raiz} className="relative">
       {/* Campo cerrado: muestra el valor elegido */}
       <button
+        ref={disparador}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={abierto}
@@ -190,7 +200,12 @@ export function SelectCreable({
       </button>
 
       {abierto && (
-        <div className="anim-entrada absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-900/10">
+        <div
+          className={cx(
+            'anim-entrada absolute inset-x-0 z-30 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-900/10',
+            arriba ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
+          )}
+        >
           <div className="flex items-center gap-2 border-b border-zinc-100 px-3.5">
             <Search className="size-4 shrink-0 text-zinc-400" />
             <input
@@ -217,7 +232,7 @@ export function SelectCreable({
             id={idLista}
             role="listbox"
             aria-label={ariaLabel}
-            className="max-h-64 overflow-y-auto overscroll-contain p-1.5"
+            className="relative max-h-64 overflow-y-auto overscroll-contain p-1.5"
           >
             {items.map((item, i) => {
               const elegido = item.tipo === 'opcion' && item.valor === value

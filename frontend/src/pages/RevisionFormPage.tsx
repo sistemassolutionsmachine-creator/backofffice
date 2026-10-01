@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { Button, Card, ESTADO_EQUIPO, PageHeader, cx } from '../components/ui'
+import { Selector } from '../components/Selector'
 import { api } from '../api/client'
 import { hoyISO } from '../utils/fechas'
 import { useData } from '../store/DataContext'
@@ -599,17 +600,17 @@ export function RevisionFormPage() {
         ) : (
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-700">Equipo</label>
-            <select
+            <Selector
+              ariaLabel="Equipo"
               value={equipoId}
-              onChange={(e) => setEquipoId(e.target.value)}
-              className={inputCls}
-            >
-              {equipos.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.codigo} · {nombreVisible(eq)}
-                </option>
-              ))}
-            </select>
+              onChange={setEquipoId}
+              placeholder="Seleccione un equipo…"
+              opciones={equipos.map((eq) => ({
+                valor: eq.id,
+                etiqueta: `${eq.codigo} · ${nombreVisible(eq)}`,
+                punto: ESTADO_EQUIPO[eq.estado].dot,
+              }))}
+            />
           </div>
         )}
         {equipo && (
@@ -848,23 +849,24 @@ export function RevisionFormPage() {
           {medMec.map((m) => (
             <div key={m.id} className="rounded-xl border border-zinc-200 p-3">
               <div className="flex items-center gap-2">
-                <select
+                <Selector
+                  compacto
+                  className="w-32 shrink-0 sm:w-36"
+                  ariaLabel="Tipo de medición"
                   value={m.tipo}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     setMedMec((arr) =>
                       arr.map((x) =>
-                        x.id === m.id
-                          ? { ...x, tipo: e.target.value as MedicionMecanica['tipo'] }
-                          : x,
+                        x.id === m.id ? { ...x, tipo: v as MedicionMecanica['tipo'] } : x,
                       ),
                     )
                   }
-                  className={cx('w-32 shrink-0 sm:w-36', inputBase)}
-                >
-                  <option value="temperatura">Temp de</option>
-                  <option value="presion">Presión de</option>
-                  <option value="otro">Dato de</option>
-                </select>
+                  opciones={[
+                    { valor: 'temperatura', etiqueta: 'Temp de' },
+                    { valor: 'presion', etiqueta: 'Presión de' },
+                    { valor: 'otro', etiqueta: 'Dato de' },
+                  ]}
+                />
                 <input
                   value={m.etiqueta}
                   onChange={(e) =>

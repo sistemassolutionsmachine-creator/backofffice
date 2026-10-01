@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Building2,
+  CheckCircle2,
   Download,
   MapPin,
   Pencil,
+  PenLine,
   Phone,
   Plus,
   QrCode,
@@ -16,6 +18,7 @@ import {
 import { Button, Card, PageHeader, cx } from '../components/ui'
 import { QrProgresoModal, type ProgresoQr } from '../components/QrProgresoModal'
 import { useData } from '../store/DataContext'
+import { api } from '../api/client'
 import { descargarEtiquetasDeEmpresa } from '../utils/qr'
 import type { Empresa, Equipo } from '../types'
 
@@ -170,6 +173,31 @@ export function EmpresasPage() {
   const [descargando, setDescargando] = useState<string | null>(null)
   const [progreso, setProgreso] = useState<ProgresoQr | null>(null)
 
+  /** Reportes entregados que el cliente aún no firma, por empresa. */
+  const [porFirmar, setPorFirmar] = useState<Map<string, number> | null>(null)
+  useEffect(() => {
+    let vigente = true
+    api.revisiones
+      .listar()
+      .then((revisiones) => {
+        if (!vigente) return
+        const mapa = new Map<string, number>()
+        for (const r of revisiones) {
+          if (r.estado === 'completado' && !r.firmaCliente) {
+            mapa.set(r.empresaId, (mapa.get(r.empresaId) ?? 0) + 1)
+          }
+        }
+        setPorFirmar(mapa)
+      })
+      .catch(() => {
+        // Sin el dato se ocultan los indicadores; el resto de la página sirve igual.
+        if (vigente) setPorFirmar(null)
+      })
+    return () => {
+      vigente = false
+    }
+  }, [])
+
   // Permite llegar con /empresas?nueva=1 desde "Registrar equipo"
   useEffect(() => {
     if (params.get('nueva') === '1') {
@@ -294,7 +322,31 @@ export function EmpresasPage() {
                 </p>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-3">
+              {/* Reportes entregados a la espera de la firma del cliente */}
+              {porFirmar && (
+                (porFirmar.get(em.id) ?? 0) > 0 ? (
+                  <Link
+                    to={`/historial?empresa=${em.id}`}
+                    className="mt-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 transition-colors hover:border-amber-300 hover:bg-amber-100"
+                  >
+                    <PenLine className="size-4 shrink-0 text-amber-600" />
+                    <span className="min-w-0 flex-1 text-xs font-semibold text-amber-900">
+                      {porFirmar.get(em.id)}{' '}
+                      {porFirmar.get(em.id) === 1
+                        ? 'reporte pendiente de firma del cliente'
+                        : 'reportes pendientes de firma del cliente'}
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-amber-700">Ver →</span>
+                  </Link>
+                ) : (
+                  <p className="mt-4 flex items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 text-xs font-medium text-zinc-500">
+                    <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+                    Sin firmas pendientes del cliente
+                  </p>
+                )
+              )}
+
+              <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-3">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
                   <Server className="size-4 text-zinc-400" />
                   {equipos.length} {equipos.length === 1 ? 'equipo' : 'equipos'}

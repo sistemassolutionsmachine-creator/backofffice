@@ -10,7 +10,8 @@ import {
   Save,
   Upload,
 } from 'lucide-react'
-import { Button, Card, PageHeader } from '../components/ui'
+import { Button, Card, ESTADO_EQUIPO, PageHeader } from '../components/ui'
+import { Selector } from '../components/Selector'
 import { useData } from '../store/DataContext'
 import { api } from '../api/client'
 import { ContratoSelect } from '../components/ContratoSelect'
@@ -284,18 +285,13 @@ export function EquipoNuevoPage() {
         <h2 className="text-sm font-bold text-zinc-900">Identificación</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <Campo etiqueta="Empresa">
-            <select
+            <Selector
+              ariaLabel="Empresa"
               value={empresaId}
-              onChange={(e) => { setEmpresaId(e.target.value); setContratoId('') }}
-              className={inputCls}
-            >
-              <option value="">Seleccione una empresa…</option>
-              {empresas.map((em) => (
-                <option key={em.id} value={em.id}>
-                  {em.nombre}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => { setEmpresaId(v); setContratoId('') }}
+              placeholder="Seleccione una empresa…"
+              opciones={empresas.map((em) => ({ valor: em.id, etiqueta: em.nombre }))}
+            />
           </Campo>
           <ContratoSelect empresaId={empresaId} value={contratoId} onChange={setContratoId} />
           <Campo
@@ -437,15 +433,16 @@ export function EquipoNuevoPage() {
           </Campo>
         </div>
         <Campo etiqueta="Estado inicial">
-          <select
+          <Selector
+            ariaLabel="Estado inicial"
             value={estado}
-            onChange={(e) => setEstado(e.target.value as EstadoEquipo)}
-            className={inputCls}
-          >
-            <option value="operativo">Operativo</option>
-            <option value="mantenimiento">En mantenimiento</option>
-            <option value="fuera_servicio">Fuera de servicio</option>
-          </select>
+            onChange={(v) => setEstado(v as EstadoEquipo)}
+            opciones={(Object.keys(ESTADO_EQUIPO) as EstadoEquipo[]).map((id) => ({
+              valor: id,
+              etiqueta: ESTADO_EQUIPO[id].label,
+              punto: ESTADO_EQUIPO[id].dot,
+            }))}
+          />
         </Campo>
       </Card>
 

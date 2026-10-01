@@ -27,6 +27,7 @@ import { FirmaModal } from '../../components/FirmaModal'
 import { Modal } from '../../components/Modal'
 import { EquipoCard, PESO_ESTADO } from '../../components/EquipoCard'
 import { Paginacion } from '../../components/Paginacion'
+import { Selector } from '../../components/Selector'
 import { api } from '../../api/client'
 import { formatFecha } from '../../utils/fechas'
 import { cerrarSesion, getUsuario } from '../../utils/auth'
@@ -450,19 +451,16 @@ export function ClientePortalPage() {
                     />
                   </div>
                   {contratos.length > 1 && (
-                    <select
-                      aria-label="Filtrar por contrato"
+                    <Selector
+                      className="lg:w-72"
+                      ariaLabel="Filtrar por contrato"
                       value={contratoFiltro}
-                      onChange={(e) => setContratoFiltro(e.target.value)}
-                      className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-700 lg:w-72"
-                    >
-                      <option value="">Todos los contratos</option>
-                      {contratos.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.codigo} · {c.nombre}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setContratoFiltro}
+                      opciones={[
+                        { valor: '', etiqueta: 'Todos los contratos' },
+                        ...contratos.map((c) => ({ valor: c.id, etiqueta: `${c.codigo} · ${c.nombre}` })),
+                      ]}
+                    />
                   )}
                 </div>
 

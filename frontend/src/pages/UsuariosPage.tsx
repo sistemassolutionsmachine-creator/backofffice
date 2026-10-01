@@ -25,6 +25,7 @@ import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { InvitacionModal, type EstadoInvitacion } from '../components/InvitacionModal'
 import { ConfirmarFraseModal } from '../components/ConfirmarFraseModal'
+import { Selector } from '../components/Selector'
 import { getUsuario } from '../utils/auth'
 import type { RolUsuario, Usuario } from '../types'
 
@@ -269,18 +270,13 @@ function UsuarioModal({
               <label className="mb-1.5 block text-sm font-medium text-zinc-700">
                 Empresa asignada
               </label>
-              <select
+              <Selector
+                ariaLabel="Empresa asignada"
                 value={form.empresaId ?? ''}
-                onChange={(e) => set({ empresaId: e.target.value || undefined })}
-                className={inputCls}
-              >
-                <option value="">Seleccione una empresa…</option>
-                {empresas.map((em) => (
-                  <option key={em.id} value={em.id}>
-                    {em.nombre}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => set({ empresaId: v || undefined })}
+                placeholder="Seleccione una empresa…"
+                opciones={empresas.map((em) => ({ valor: em.id, etiqueta: em.nombre }))}
+              />
               <p className="mt-1 text-xs text-zinc-500">
                 El cliente solo verá el inventario e historial de esta empresa.
               </p>
@@ -713,19 +709,19 @@ export function UsuariosPage() {
               {puedeDesignar ? (
                 candidatos.length > 0 ? (
                   <div className="mt-3 flex gap-2">
-                    <select
+                    <Selector
+                      compacto
+                      className="min-w-0 flex-1"
+                      ariaLabel="Administrador a designar como superadministrador"
                       value={designar}
-                      onChange={(e) => setDesignar(e.target.value)}
-                      aria-label="Administrador a designar como superadministrador"
-                      className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-2.5 py-2 text-xs"
-                    >
-                      <option value="">Elegir administrador…</option>
-                      {candidatos.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nombre} ({c.usuario})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setDesignar}
+                      placeholder="Elegir administrador…"
+                      opciones={candidatos.map((c) => ({
+                        valor: c.id,
+                        etiqueta: c.nombre,
+                        detalle: c.usuario,
+                      }))}
+                    />
                     <Button
                       className="shrink-0 px-3 py-2 text-xs"
                       disabled={!designar}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { FileText, Camera } from 'lucide-react'
 import {
   Card,
@@ -11,6 +11,7 @@ import {
 } from '../components/ui'
 import { api } from '../api/client'
 import { DescargarReporteButton } from '../components/DescargarReporteButton'
+import { Selector } from '../components/Selector'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { nombreVisible } from '../types'
@@ -27,7 +28,11 @@ export function HistorialPage() {
   const { empresas, getEmpresa, getEquipo } = useData()
   const [query, setQuery] = useState('')
   const [filtro, setFiltro] = useState<TipoServicio | 'todos'>('todos')
-  const [empresaFiltro, setEmpresaFiltro] = useState('')
+  // En la URL: así los enlaces desde Empresas llegan ya filtrados.
+  const [params, setParams] = useSearchParams()
+  const empresaFiltro = params.get('empresa') ?? ''
+  const setEmpresaFiltro = (v: string) =>
+    setParams(v ? { empresa: v } : {}, { replace: true })
   const [revisiones, setRevisiones] = useState<Revision[]>([])
   const [, setCargando] = useState(true)
 
@@ -78,18 +83,16 @@ export function HistorialPage() {
             onChange={setQuery}
             placeholder="Buscar por consecutivo, equipo, técnico…"
           />
-          <select
+          <Selector
+            className="w-full sm:w-64"
+            ariaLabel="Filtrar por empresa"
             value={empresaFiltro}
-            onChange={(e) => setEmpresaFiltro(e.target.value)}
-            className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none sm:w-56"
-          >
-            <option value="">Todas las empresas</option>
-            {empresas.map((em) => (
-              <option key={em.id} value={em.id}>
-                {em.nombre}
-              </option>
-            ))}
-          </select>
+            onChange={setEmpresaFiltro}
+            opciones={[
+              { valor: '', etiqueta: 'Todas las empresas' },
+              ...empresas.map((em) => ({ valor: em.id, etiqueta: em.nombre })),
+            ]}
+          />
         </div>
         <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {filtros.map((f) => (

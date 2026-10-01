@@ -23,6 +23,7 @@ import {
 import { useData } from '../store/DataContext'
 import { EquipoCard, PESO_ESTADO as PESO } from '../components/EquipoCard'
 import { Paginacion } from '../components/Paginacion'
+import { Selector } from '../components/Selector'
 import { api } from '../api/client'
 import { fechaCorta } from '../utils/fechas'
 import { nombreVisible } from '../types'
@@ -338,18 +339,30 @@ export function EquiposPage() {
 
       {error && <p role="alert" className="rounded-xl bg-brand-50 p-4 text-sm text-brand-700">{error}</p>}
       {empresaSel && (
-        <label className="block max-w-lg text-sm font-semibold text-zinc-700">Contrato
-          <select aria-label="Filtrar por contrato" value={contratoFiltro} onChange={(e) => {
-            const nuevos = new URLSearchParams(params)
-            if (e.target.value) nuevos.set('contrato', e.target.value)
-            else nuevos.delete('contrato')
-            setParams(nuevos)
-          }} className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm">
-            <option value="">Todos los contratos</option>
-            {contratos.filter((c) => c.empresaId === empresaSel.id).map((c) => <option key={c.id} value={c.id}>{c.codigo} · {c.nombre}{c.estado === 'finalizado' ? ' (finalizado)' : ''}</option>)}
-            <option value="pendientes">Pendientes de contrato</option>
-          </select>
-        </label>
+        <div className="block max-w-lg text-sm font-semibold text-zinc-700">
+          <span className="mb-2 block">Contrato</span>
+          <Selector
+            ariaLabel="Filtrar por contrato"
+            value={contratoFiltro}
+            onChange={(v) => {
+              const nuevos = new URLSearchParams(params)
+              if (v) nuevos.set('contrato', v)
+              else nuevos.delete('contrato')
+              setParams(nuevos)
+            }}
+            opciones={[
+              { valor: '', etiqueta: 'Todos los contratos' },
+              ...contratos
+                .filter((c) => c.empresaId === empresaSel.id)
+                .map((c) => ({
+                  valor: c.id,
+                  etiqueta: `${c.codigo} · ${c.nombre}`,
+                  detalle: c.estado === 'finalizado' ? 'Finalizado' : undefined,
+                })),
+              { valor: 'pendientes', etiqueta: 'Pendientes de contrato' },
+            ]}
+          />
+        </div>
       )}
 
       {/* Resumen del inventario (solo en la vista general) */}

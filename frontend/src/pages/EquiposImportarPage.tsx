@@ -11,6 +11,7 @@ import {
 import { Button, Card, PageHeader, cx } from '../components/ui'
 import { useData } from '../store/DataContext'
 import { ContratoSelect } from '../components/ContratoSelect'
+import { Selector } from '../components/Selector'
 import { api, type ResultadoImportacion } from '../api/client'
 import {
   COLUMNAS,
@@ -19,9 +20,6 @@ import {
   type LecturaArchivo,
 } from '../utils/plantillaEquipos'
 import { nombreVisible } from '../types'
-
-const inputCls =
-  'w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none'
 
 export function EquiposImportarPage() {
   const navigate = useNavigate()
@@ -223,18 +221,14 @@ export function EquiposImportarPage() {
           Todos los equipos del archivo quedarán asignados a esta empresa. Por eso
           la plantilla no incluye una columna de empresa.
         </p>
-        <select
+        <Selector
+          className="mt-3"
+          ariaLabel="Empresa de destino"
           value={empresaId}
-          onChange={(e) => { setEmpresaId(e.target.value); setContratoId('') }}
-          className={cx(inputCls, 'mt-3')}
-        >
-          <option value="">Seleccione una empresa…</option>
-          {empresas.map((em) => (
-            <option key={em.id} value={em.id}>
-              {em.nombre}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => { setEmpresaId(v); setContratoId('') }}
+          placeholder="Seleccione una empresa…"
+          opciones={empresas.map((em) => ({ valor: em.id, etiqueta: em.nombre }))}
+        />
         <div className="mt-4"><ContratoSelect empresaId={empresaId} value={contratoId} onChange={setContratoId} /></div>
       </Card>
 
@@ -359,6 +353,25 @@ export function EquiposImportarPage() {
             </span>
           </label>
 
+          {!contratoId && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-xs text-amber-900">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                <span className="font-semibold">
+                  Falta el contrato de ingreso (paso 1).
+                </span>{' '}
+                Todos los equipos del archivo quedan demarcados bajo ese contrato.{' '}
+                <Link
+                  to={`/contratos?empresa=${empresaId}`}
+                  className="font-semibold text-brand-700 underline-offset-2 hover:underline"
+                >
+                  Crear un contrato para {empresa.nombre}
+                </Link>{' '}
+                si aún no tiene uno activo.
+              </span>
+            </p>
+          )}
+
           <Button
             className="mt-4 w-full py-3"
             disabled={cargando || !contratoId}
@@ -367,7 +380,9 @@ export function EquiposImportarPage() {
             <Upload className="size-4" />
             {cargando
               ? 'Cargando…'
-              : `Importar ${lectura.filas.length} equipos a ${empresa.nombre}`}
+              : !contratoId
+                ? 'Elija el contrato de ingreso para importar'
+                : `Importar ${lectura.filas.length} equipos a ${empresa.nombre}`}
           </Button>
         </Card>
       )}
