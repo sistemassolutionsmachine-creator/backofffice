@@ -58,10 +58,14 @@ function AccionesSupervision({
         </span>
       ) : (
         <>
-          {revision.supervision ? (
+          {revision.supervision || !revision.requiereSupervision ? (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200"
-              title={`Supervisado por ${revision.supervision.por} · ${revision.supervision.fecha}`}
+              title={
+                revision.supervision
+                  ? `Supervisado por ${revision.supervision.por} · ${revision.supervision.fecha}`
+                  : 'Reporte anterior al flujo de supervisión: ya está disponible para el cliente'
+              }
             >
               <ShieldCheck className="size-3.5" />
               Supervisado
