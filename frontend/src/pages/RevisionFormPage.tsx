@@ -164,6 +164,51 @@ interface Foto {
 }
 
 /**
+ * Reconstruye el estado del formulario desde un reporte guardado sin
+ * `borradorDatos` (creados con versiones anteriores, como los migrados).
+ * Invierte las transformaciones de `datosReporte`.
+ */
+function snapshotDesdeRevision(r: RevisionDetalle): SnapshotFormulario {
+  const rutina = RUTINA.map(() => ({ estado: null as CheckEstado, obs: '' }))
+  for (const item of r.rutina ?? []) {
+    const i = RUTINA.findIndex((def) => def.texto === item.item)
+    if (i >= 0) {
+      rutina[i] = {
+        estado: item.estado === 'OK' ? 'ok' : item.estado === 'N/A' ? 'na' : null,
+        obs: item.obs ?? '',
+      }
+    }
+  }
+  const tipoId = (r.tipoEquipo ?? '').split(' · ')[0]
+  return {
+    motivo: MOTIVOS.find((m) => m.label === r.motivo)?.id ?? 'preventivo',
+    tipoEquipo: TIPOS_EQUIPO.some((t) => t.id === tipoId) ? (tipoId as TipoEquipoId) : null,
+    visual: INSPECCION_VISUAL.map((_, i) => {
+      const item = r.inspeccionVisual?.[i]
+      return {
+        estado: item?.estado === 'BIEN' ? ('bien' as const) : item?.estado === 'MAL' ? ('mal' as const) : null,
+        obs: item?.obs ?? '',
+      }
+    }),
+    rutina,
+    medMec: (r.medicionesMecanicas ?? []).map((m, i) => ({
+      id: i + 1,
+      tipo: m.tipo === 'Temp de' ? ('temperatura' as const) : m.tipo === 'Presión de' ? ('presion' as const) : ('otro' as const),
+      etiqueta: m.etiqueta,
+      sum: m.v1,
+      ret: m.v2,
+    })),
+    medElec: (r.medicionesElectricas ?? []).map((m, i) => ({ id: i + 1, ...m })),
+    monitoreo: r.monitoreo ?? '',
+    analisis: r.analisis ?? '',
+    correctivos: r.correctivos ?? '',
+    observaciones: r.observaciones ?? '',
+    estadoEquipo: r.estadoEquipo ?? null,
+    firmado: Boolean(r.firmaTecnico),
+  }
+}
+
+/**
  * Estado crudo del formulario que viaja en el borrador.
  * Permite reanudar exactamente donde quedó, sin reconstruir nada.
  */
@@ -357,8 +402,9 @@ export function RevisionFormPage() {
   const [descartando, setDescartando] = useState(false)
   const guardandoRef = useRef(false)
 
-  // Edición de un reporte ya registrado (administrador). Firmado = solo lectura.
-  const modoEdicion = Boolean(cargada && cargada.estado !== 'borrador')
+  // Edición de un reporte ya completado (administrador). Firmado = solo lectura.
+  // Un reporte "en proceso" se retoma con el flujo normal de completar.
+  const modoEdicion = cargada?.estado === 'completado'
   const soloLectura = Boolean(cargada?.firmaCliente)
 
   /** Reconstruye el formulario desde el borrador guardado en el servidor. */
@@ -369,23 +415,25 @@ export function RevisionFormPage() {
       try {
         const detalle = await api.revisiones.obtener(equipoParam, revisionParam)
         if (cancelado) return
-        const s = detalle.borradorDatos as SnapshotFormulario | null
-        if (s && Array.isArray(s.visual) && Array.isArray(s.rutina)) {
-          setMotivo(s.motivo)
-          setTipoEquipo(s.tipoEquipo)
-          setVisual(INSPECCION_VISUAL.map((_, i) => s.visual[i] ?? { estado: null, obs: '' }))
-          setRutina(RUTINA.map((_, i) => ({ obsAbierta: false, ...(s.rutina[i] ?? { estado: null, obs: '' }) })))
-          if (s.medMec.length > 0) setMedMec(s.medMec)
-          if (s.medElec.length > 0) setMedElec(s.medElec)
-          setMonitoreo(s.monitoreo)
-          setAnalisis(s.analisis)
-          setCorrectivos(s.correctivos)
-          setObservaciones(s.observaciones)
-          setEstadoEquipo(s.estadoEquipo)
-          setFirmado(s.firmado)
-        } else {
-          setErrorGuardado('Este reporte fue creado con una versión anterior y no se puede editar aquí.')
-        }
+        const guardado = detalle.borradorDatos as SnapshotFormulario | null
+        // Sin estado crudo (reportes de versiones anteriores o migrados), se
+        // reconstruye desde los datos del propio reporte.
+        const s =
+          guardado && Array.isArray(guardado.visual) && Array.isArray(guardado.rutina)
+            ? guardado
+            : snapshotDesdeRevision(detalle)
+        setMotivo(s.motivo)
+        setTipoEquipo(s.tipoEquipo)
+        setVisual(INSPECCION_VISUAL.map((_, i) => s.visual[i] ?? { estado: null, obs: '' }))
+        setRutina(RUTINA.map((_, i) => ({ obsAbierta: false, ...(s.rutina[i] ?? { estado: null, obs: '' }) })))
+        if (s.medMec.length > 0) setMedMec(s.medMec)
+        if (s.medElec.length > 0) setMedElec(s.medElec)
+        setMonitoreo(s.monitoreo)
+        setAnalisis(s.analisis)
+        setCorrectivos(s.correctivos)
+        setObservaciones(s.observaciones)
+        setEstadoEquipo(s.estadoEquipo)
+        setFirmado(s.firmado)
         const aFotos = (claves: string[], urls: string[]): Foto[] =>
           claves.map((clave, i) => ({ clave, url: urls[i] ?? '', nombre: clave.split('/').at(-1) ?? 'foto.jpg' }))
         setFotosEntrada(aFotos(detalle.fotosEntrada, detalle.urls.fotosEntrada))

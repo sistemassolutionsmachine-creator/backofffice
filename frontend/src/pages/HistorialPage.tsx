@@ -34,6 +34,19 @@ function AccionesSupervision({
   supervisando: boolean
   onSupervisar: (r: Revision) => void
 }) {
+  // Un reporte abierto se retoma desde el formulario con el flujo de completar.
+  if (revision.estado === 'en_proceso') {
+    return (
+      <Link
+        to={`/revisiones/nueva?equipo=${revision.equipoId}&revision=${revision.id}`}
+        title="Retomar y completar el reporte"
+        className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-200"
+      >
+        <PenLine className="size-3.5" />
+        Retomar
+      </Link>
+    )
+  }
   if (revision.estado !== 'completado') return null
 
   return (
@@ -65,16 +78,14 @@ function AccionesSupervision({
               {supervisando ? 'Guardando…' : 'Supervisión terminada'}
             </button>
           ) : null}
-          {Boolean(revision.borradorDatos) && (
-            <Link
-              to={`/revisiones/nueva?equipo=${revision.equipoId}&revision=${revision.id}`}
-              title="Editar los valores del reporte"
-              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-200"
-            >
-              <PenLine className="size-3.5" />
-              Editar
-            </Link>
-          )}
+          <Link
+            to={`/revisiones/nueva?equipo=${revision.equipoId}&revision=${revision.id}`}
+            title="Editar los valores del reporte"
+            className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-200"
+          >
+            <PenLine className="size-3.5" />
+            Editar
+          </Link>
         </>
       )}
     </div>
