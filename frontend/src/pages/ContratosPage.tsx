@@ -4,7 +4,7 @@ import { ArrowLeft, FileText, Plus, Upload } from 'lucide-react'
 import { Button, Card, PageHeader, SearchInput, cx } from '../components/ui'
 import { useData } from '../store/DataContext'
 import { Selector } from '../components/Selector'
-import { nombreVisible, type Contrato } from '../types'
+import { contratosDeEquipo, nombreVisible, type Contrato } from '../types'
 
 const inputCls = 'mt-1.5 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm'
 
@@ -14,7 +14,8 @@ export function ContratosPage() {
   const empresaId = params.get('empresa') ?? ''
   const empresa = empresas.find((e) => e.id === empresaId)
   const lista = contratos.filter((c) => c.empresaId === empresaId)
-  const pendientes = equipos.filter((e) => e.empresaId === empresaId && !e.contratoId)
+  const delaEmpresa = equipos.filter((e) => e.empresaId === empresaId)
+  const pendientes = delaEmpresa.filter((e) => contratosDeEquipo(e).length === 0)
   const [editando, setEditando] = useState<Contrato | null>(null)
   const [formulario, setFormulario] = useState(false)
   const [nombre, setNombre] = useState('')
@@ -28,7 +29,12 @@ export function ContratosPage() {
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState('')
-  const visibles = pendientes.filter((e) => `${e.codigo} ${nombreVisible(e)} ${e.ubicacion}`.toLowerCase().includes(query.toLowerCase()))
+  // Con destino elegido se ofrecen todos los equipos que aún no estén en ese
+  // contrato: así un mismo equipo puede sumarse a varios contratos.
+  const elegibles = destino
+    ? delaEmpresa.filter((e) => !contratosDeEquipo(e).includes(destino))
+    : pendientes
+  const visibles = elegibles.filter((e) => `${e.codigo} ${nombreVisible(e)} ${e.ubicacion}`.toLowerCase().includes(query.toLowerCase()))
 
   const abrir = (c?: Contrato) => {
     setEditando(c ?? null)
@@ -70,7 +76,10 @@ export function ContratosPage() {
       // Cada escritura confirmada actualiza la interfaz. Si falla, se puede
       // continuar con los pendientes sin repetir los equipos ya asignados.
       for (const id of seleccion) {
-        await updateEquipo(id, { contratoId: destino })
+        const equipo = equipos.find((e) => e.id === id)
+        if (!equipo) continue
+        // El contrato de destino se suma a los que el equipo ya tenga.
+        await updateEquipo(id, { contratoIds: [...contratosDeEquipo(equipo), destino] })
         completados++
         setSeleccion((s) => s.filter((x) => x !== id))
         setAviso(`${completados} de ${seleccion.length} equipos asignados…`)
@@ -137,7 +146,7 @@ export function ContratosPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {lista.map((c) => {
-          const cantidad = equipos.filter((e) => e.contratoId === c.id).length
+          const cantidad = equipos.filter((e) => contratosDeEquipo(e).includes(c.id)).length
           const enlace = `empresa=${empresaId}&contrato=${c.id}`
           return (
             <Card key={c.id} className="flex flex-col overflow-hidden">
@@ -162,28 +171,43 @@ export function ContratosPage() {
       </div>
       {empresaId && lista.length === 0 && !formulario && <Card className="p-8 text-center text-sm text-zinc-500">Cree el primer contrato de esta empresa para organizar sus equipos.</Card>}
 
-      {pendientes.length > 0 && (
+      {empresaId && (pendientes.length > 0 || (destino && elegibles.length > 0) || lista.some((c) => c.estado === 'activo')) && delaEmpresa.length > 0 && (
         <Card className="p-5">
-          <h2 className="font-bold text-zinc-900">Inventario pendiente de asignación</h2>
-          <p className="mt-1 text-sm text-zinc-500">{pendientes.length} equipos anteriores a los contratos. Seleccione cuáles ingresaron juntos y asígnelos a su contrato real.</p>
+          <h2 className="font-bold text-zinc-900">Asignar equipos a un contrato</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            {destino
+              ? `${elegibles.length} equipos aún no pertenecen al contrato elegido. Un equipo puede estar en varios contratos a la vez.`
+              : pendientes.length > 0
+                ? `${pendientes.length} equipos sin contrato. Elija el contrato de destino para ver también los demás equipos de la empresa.`
+                : 'Elija el contrato de destino para sumar equipos, aunque ya pertenezcan a otros contratos.'}
+          </p>
           <fieldset disabled={ocupado} className="mt-4 space-y-4">
-            <SearchInput value={query} onChange={setQuery} placeholder="Buscar equipos pendientes…" />
-            <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={visibles.length > 0 && visibles.every((e) => seleccion.includes(e.id))} onChange={(e) => setSeleccion(e.target.checked ? [...new Set([...seleccion, ...visibles.map((x) => x.id)])] : seleccion.filter((id) => !visibles.some((x) => x.id === id)))} /> Seleccionar los {visibles.length} resultados</label>
-            <div className="max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200">
-              {visibles.map((e) => <label key={e.id} className="flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-zinc-50"><input type="checkbox" checked={seleccion.includes(e.id)} onChange={(ev) => setSeleccion((s) => ev.target.checked ? [...s, e.id] : s.filter((id) => id !== e.id))} /><span className="min-w-0"><span className="block truncate font-semibold">{nombreVisible(e)}</span><span className="block truncate text-xs text-zinc-500">{e.codigo} · {e.ubicacion}</span></span></label>)}
-            </div>
             <div className="block text-sm font-medium">
               <span className="mb-1.5 block">Contrato de destino</span>
               <Selector
                 ariaLabel="Contrato de destino"
                 value={destino}
-                onChange={setDestino}
+                onChange={(v) => { setDestino(v); setSeleccion([]) }}
                 disabled={ocupado}
                 placeholder="Seleccione un contrato activo…"
                 opciones={lista
                   .filter((c) => c.estado === 'activo')
                   .map((c) => ({ valor: c.id, etiqueta: `${c.codigo} · ${c.nombre}` }))}
               />
+            </div>
+            <SearchInput value={query} onChange={setQuery} placeholder="Buscar equipos…" />
+            <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={visibles.length > 0 && visibles.every((e) => seleccion.includes(e.id))} onChange={(e) => setSeleccion(e.target.checked ? [...new Set([...seleccion, ...visibles.map((x) => x.id)])] : seleccion.filter((id) => !visibles.some((x) => x.id === id)))} /> Seleccionar los {visibles.length} resultados</label>
+            <div className="max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-xl border border-zinc-200">
+              {visibles.map((e) => {
+                const otros = contratosDeEquipo(e).length
+                return (
+                  <label key={e.id} className="flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-zinc-50">
+                    <input type="checkbox" checked={seleccion.includes(e.id)} onChange={(ev) => setSeleccion((s) => ev.target.checked ? [...s, e.id] : s.filter((id) => id !== e.id))} />
+                    <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{nombreVisible(e)}</span><span className="block truncate text-xs text-zinc-500">{e.codigo} · {e.ubicacion}</span></span>
+                    {otros > 0 && <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">{otros === 1 ? 'en 1 contrato' : `en ${otros} contratos`}</span>}
+                  </label>
+                )
+              })}
             </div>
             <Button disabled={ocupado || !destino || !seleccion.length} onClick={() => void asignar()}>{ocupado ? 'Asignando…' : `Asignar ${seleccion.length} equipos`}</Button>
           </fieldset>

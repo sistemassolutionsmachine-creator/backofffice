@@ -26,7 +26,7 @@ import { Paginacion } from '../components/Paginacion'
 import { Selector } from '../components/Selector'
 import { api } from '../api/client'
 import { fechaCorta } from '../utils/fechas'
-import { nombreVisible } from '../types'
+import { contratosDeEquipo, nombreVisible } from '../types'
 import type { Empresa, EstadoEquipo, Equipo, Revision } from '../types'
 
 const ESTADOS: Record<
@@ -220,7 +220,7 @@ export function EquiposPage() {
     () =>
       equipos
         .filter((e) => !empresaFiltro || e.empresaId === empresaFiltro)
-        .filter((e) => !contratoFiltro || (contratoFiltro === 'pendientes' ? !e.contratoId : e.contratoId === contratoFiltro))
+        .filter((e) => !contratoFiltro || (contratoFiltro === 'pendientes' ? contratosDeEquipo(e).length === 0 : contratosDeEquipo(e).includes(contratoFiltro)))
         .filter(coincide),
     [equipos, empresaFiltro, contratoFiltro, coincide],
   )
@@ -478,7 +478,11 @@ export function EquiposPage() {
                     eq={eq}
                     to={`/equipos/${eq.id}`}
                     indice={i}
-                    contratoNombre={contratos.find((c) => c.id === eq.contratoId)?.codigo}
+                    contratoNombre={(() => {
+                      const ids = contratosDeEquipo(eq)
+                      const primero = contratos.find((c) => c.id === (ids.includes(contratoFiltro) ? contratoFiltro : ids[0]))?.codigo
+                      return primero && ids.length > 1 ? `${primero} +${ids.length - 1}` : primero
+                    })()}
                     nRevisiones={revisionesPorEquipo.get(eq.id) ?? 0}
                     empresaNombre={
                       !empresaFiltro ? getEmpresa(eq.empresaId)?.nombre : undefined

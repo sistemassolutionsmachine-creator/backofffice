@@ -46,7 +46,10 @@ export interface Equipo {
   id: string
   empresaId: string
   /** Contrato bajo el que entró el equipo. Null en inventarios antiguos. */
+  /** Primer contrato de la lista. Se conserva por compatibilidad con fichas antiguas. */
   contratoId: string | null
+  /** Contratos a los que pertenece el equipo. Puede estar vacío. */
+  contratoIds?: string[]
   /** Identificador impreso en la etiqueta QR. Único en todo el inventario. */
   codigo: string
   /** Sistema al que pertenece: VRF Samsung, CHWS, Ventilación mecánica… */
@@ -77,6 +80,12 @@ export interface Equipo {
 /** Nombre a mostrar: usa la denominación de planos si existe. */
 export function nombreVisible(eq: Pick<Equipo, 'nombre' | 'tipo'>) {
   return eq.nombre?.trim() || eq.tipo
+}
+
+/** Contratos del equipo. Las fichas antiguas solo tienen `contratoId`. */
+export function contratosDeEquipo(eq: Pick<Equipo, 'contratoId' | 'contratoIds'>): string[] {
+  if (Array.isArray(eq.contratoIds)) return eq.contratoIds
+  return eq.contratoId ? [eq.contratoId] : []
 }
 
 export type TipoServicio = 'preventivo' | 'correctivo' | 'revision' | 'instalacion'

@@ -63,7 +63,7 @@ export function EquiposImportarPage() {
   }
 
   const importar = async () => {
-    if (!lectura || !empresaId || !contratoId || cargando) return
+    if (!lectura || !empresaId || cargando) return
     setCargando(true)
     setError(null)
     try {
@@ -71,7 +71,7 @@ export function EquiposImportarPage() {
         empresaId,
         lectura.filas.map((f) => f.datos),
         actualizarExistentes,
-        contratoId,
+        contratoId || undefined,
       )
       setResultado(r)
       await recargar()
@@ -357,32 +357,29 @@ export function EquiposImportarPage() {
             <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-3 text-xs text-amber-900">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <span>
-                <span className="font-semibold">
-                  Falta el contrato de ingreso (paso 1).
-                </span>{' '}
-                Todos los equipos del archivo quedan demarcados bajo ese contrato.{' '}
+                <span className="font-semibold">Sin contrato de ingreso (paso 1).</span>{' '}
+                Los equipos nuevos quedarán pendientes de contrato y podrá asignarlos
+                después desde{' '}
                 <Link
                   to={`/contratos?empresa=${empresaId}`}
                   className="font-semibold text-brand-700 underline-offset-2 hover:underline"
                 >
-                  Crear un contrato para {empresa.nombre}
-                </Link>{' '}
-                si aún no tiene uno activo.
+                  Contratos
+                </Link>
+                . Si elige uno, también se sumará a los equipos ya existentes del archivo.
               </span>
             </p>
           )}
 
           <Button
             className="mt-4 w-full py-3"
-            disabled={cargando || !contratoId}
+            disabled={cargando}
             onClick={() => void importar()}
           >
             <Upload className="size-4" />
             {cargando
               ? 'Cargando…'
-              : !contratoId
-                ? 'Elija el contrato de ingreso para importar'
-                : `Importar ${lectura.filas.length} equipos a ${empresa.nombre}`}
+              : `Importar ${lectura.filas.length} equipos a ${empresa.nombre}`}
           </Button>
         </Card>
       )}

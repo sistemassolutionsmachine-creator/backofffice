@@ -7,8 +7,10 @@ import {
   ClipboardList,
   Download,
   MapPin,
+  Plus,
   Printer,
   Camera,
+  X,
 } from 'lucide-react'
 import {
   Button,
@@ -23,16 +25,34 @@ import { DescargarReporteButton } from '../components/DescargarReporteButton'
 import { formatFecha } from '../utils/fechas'
 import { useData } from '../store/DataContext'
 import { descargarEtiquetaQr, urlDeEquipo } from '../utils/qr'
-import { nombreVisible } from '../types'
+import { contratosDeEquipo, nombreVisible } from '../types'
 import type { Revision } from '../types'
+import { Selector } from '../components/Selector'
 
 export function EquipoDetallePage() {
   const { id } = useParams()
-  const { getEquipo, getEmpresa, contratos } = useData()
+  const { getEquipo, getEmpresa, contratos, updateEquipo } = useData()
   const qrRef = useRef<HTMLDivElement>(null)
   const equipo = getEquipo(id ?? '')
   const [historial, setHistorial] = useState<Revision[]>([])
   const [descargandoQr, setDescargandoQr] = useState(false)
+  const [contratoNuevo, setContratoNuevo] = useState('')
+  const [guardandoContrato, setGuardandoContrato] = useState(false)
+  const [errorContrato, setErrorContrato] = useState<string | null>(null)
+
+  const cambiarContratos = async (contratoIds: string[]) => {
+    if (!equipo || guardandoContrato) return
+    setGuardandoContrato(true)
+    setErrorContrato(null)
+    try {
+      await updateEquipo(equipo.id, { contratoIds })
+      setContratoNuevo('')
+    } catch (e) {
+      setErrorContrato(e instanceof Error ? e.message : 'No se pudo actualizar el contrato')
+    } finally {
+      setGuardandoContrato(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -62,7 +82,13 @@ export function EquipoDetallePage() {
   }
 
   const empresa = getEmpresa(equipo.empresaId)
-  const contrato = contratos.find((c) => c.id === equipo.contratoId)
+  const contratosActuales = contratosDeEquipo(equipo)
+  const contratosAsignados = contratosActuales
+    .map((cid) => contratos.find((c) => c.id === cid))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+  const contratosDisponibles = contratos.filter(
+    (c) => c.empresaId === equipo.empresaId && c.estado === 'activo' && !contratosActuales.includes(c.id),
+  )
   // Solo se listan los campos con contenido: la ficha varía mucho entre
   // un extractor y una condensadora.
   const specs = (
@@ -116,9 +142,56 @@ export function EquipoDetallePage() {
         </Link>
       </div>
 
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div><p className="text-xs font-semibold text-zinc-500">Contrato de ingreso</p><p className="mt-1 text-sm font-bold text-zinc-900">{contrato ? `${contrato.codigo} · ${contrato.nombre}` : 'Pendiente de asignación'}</p></div>
-        <Link to={`/contratos?empresa=${equipo.empresaId}`} className="text-sm font-semibold text-brand-700">Ver contratos →</Link>
+      <Card className="space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-zinc-500">
+            Contratos del equipo
+            {contratosAsignados.length > 0 && ` · ${contratosAsignados.length}`}
+          </p>
+          <Link to={`/contratos?empresa=${equipo.empresaId}`} className="text-sm font-semibold text-brand-700">Ver contratos →</Link>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {contratosAsignados.length === 0 && (
+            <p className="text-sm font-bold text-zinc-900">Pendiente de asignación</p>
+          )}
+          {contratosAsignados.map((c) => (
+            <span key={c.id} className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 py-1 pr-1.5 pl-3 text-xs font-bold text-zinc-700 ring-1 ring-zinc-200">
+              {c.codigo} · {c.nombre}
+              <button
+                type="button"
+                disabled={guardandoContrato}
+                title="Quitar de este contrato"
+                onClick={() => void cambiarContratos(contratosActuales.filter((cid) => cid !== c.id))}
+                className="rounded-full p-0.5 text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+        {contratosDisponibles.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Selector
+              compacto
+              className="w-64"
+              ariaLabel="Agregar a un contrato"
+              value={contratoNuevo}
+              onChange={setContratoNuevo}
+              disabled={guardandoContrato}
+              placeholder="Agregar a un contrato…"
+              opciones={contratosDisponibles.map((c) => ({ valor: c.id, etiqueta: `${c.codigo} · ${c.nombre}` }))}
+            />
+            <Button
+              variant="secondary"
+              disabled={!contratoNuevo || guardandoContrato}
+              onClick={() => void cambiarContratos([...contratosActuales, contratoNuevo])}
+            >
+              <Plus className="size-4" />
+              {guardandoContrato ? 'Guardando…' : 'Agregar'}
+            </Button>
+          </div>
+        )}
+        {errorContrato && <p role="alert" className="text-xs font-semibold text-brand-700">{errorContrato}</p>}
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Ficha técnica */}

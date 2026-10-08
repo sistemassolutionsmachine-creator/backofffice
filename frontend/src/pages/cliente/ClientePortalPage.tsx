@@ -32,7 +32,7 @@ import { api } from '../../api/client'
 import { formatFecha } from '../../utils/fechas'
 import { cerrarSesion, getUsuario } from '../../utils/auth'
 import { archivarReporte, descargarReporte } from '../../utils/reporteArchivado'
-import { nombreVisible } from '../../types'
+import { contratosDeEquipo, nombreVisible } from '../../types'
 import type { Contrato, Empresa, EstadoEquipo, Equipo, Revision } from '../../types'
 
 const EQUIPOS_POR_PAGINA = 12
@@ -104,7 +104,7 @@ export function ClientePortalPage() {
   const ambito = useMemo(() => {
     const q = query.trim().toLowerCase()
     return equipos
-      .filter((e) => !contratoFiltro || e.contratoId === contratoFiltro)
+      .filter((e) => !contratoFiltro || contratosDeEquipo(e).includes(contratoFiltro))
       .filter(
         (e) =>
           !q ||
@@ -505,7 +505,11 @@ export function ClientePortalPage() {
                       eq={eq}
                       indice={i}
                       nRevisiones={revisionesPorEquipo.get(eq.id)?.length ?? 0}
-                      contratoNombre={codigoContrato(eq.contratoId)}
+                      contratoNombre={codigoContrato(
+                        contratosDeEquipo(eq).includes(contratoFiltro)
+                          ? contratoFiltro
+                          : contratosDeEquipo(eq)[0] ?? null,
+                      )}
                       onClick={() => setEquipoAbierto(eq)}
                     />
                   ))}
@@ -565,7 +569,7 @@ export function ClientePortalPage() {
       {equipoAbierto && !firmando && (
         <FichaEquipo
           eq={equipoAbierto}
-          contrato={contratos.find((c) => c.id === equipoAbierto.contratoId)}
+          contrato={contratos.find((c) => contratosDeEquipo(equipoAbierto).includes(c.id))}
           historial={revisionesPorEquipo.get(equipoAbierto.id) ?? []}
           FilaReporte={FilaReporte}
           onCerrar={() => setEquipoAbierto(null)}

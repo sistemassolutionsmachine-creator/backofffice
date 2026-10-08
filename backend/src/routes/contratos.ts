@@ -9,7 +9,7 @@ import {
   sinContenido,
   type Peticion,
 } from '../lib/http.js'
-import type { Contrato, Empresa, Equipo } from '../types.js'
+import { contratosDeEquipo, type Contrato, type Empresa, type Equipo } from '../types.js'
 
 function indices(c: Contrato) {
   return {
@@ -122,7 +122,7 @@ export async function eliminar(req: Peticion, id: string) {
     pk: `EMPRESA#${contrato.empresaId}`,
     sk: 'EQUIPO#',
   })
-  const asignados = equipos.filter((e) => e.contratoId === id).length
+  const asignados = equipos.filter((e) => contratosDeEquipo(e).includes(id)).length
   if (asignados > 0) {
     throw malaPeticion(
       `No se puede eliminar: hay ${asignados} equipo(s) demarcados bajo este contrato. Puede marcarlo como finalizado.`,

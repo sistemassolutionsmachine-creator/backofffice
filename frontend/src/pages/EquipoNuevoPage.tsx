@@ -134,7 +134,7 @@ export function EquipoNuevoPage() {
   }
 
   const codigoFinal = (codigo.trim() || codigoSugerido).toUpperCase()
-  const valido = Boolean(empresaId && contratoId && tipo && ubicacion.trim())
+  const valido = Boolean(empresaId && tipo && ubicacion.trim())
   const empresa = empresas.find((e) => e.id === (creado?.empresaId ?? empresaId))
 
   const guardar = async () => {
@@ -144,7 +144,8 @@ export function EquipoNuevoPage() {
     try {
       const nuevo = await addEquipo({
         empresaId,
-        contratoId,
+        contratoId: contratoId || null,
+        contratoIds: contratoId ? [contratoId] : [],
         codigo: codigoFinal,
         sistema,
         tipo,

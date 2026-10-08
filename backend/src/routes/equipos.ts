@@ -10,7 +10,7 @@ import {
   sinContenido,
   type Peticion,
 } from '../lib/http.js'
-import type { Contrato, Empresa, Equipo } from '../types.js'
+import { contratosDeEquipo, type Contrato, type Empresa, type Equipo } from '../types.js'
 
 /** Comprueba que el contrato exista y pertenezca a la empresa indicada. */
 async function validarContrato(contratoId: string, empresaId: string) {
@@ -22,6 +22,14 @@ async function validarContrato(contratoId: string, empresaId: string) {
   }
   if (contrato.estado !== 'activo') throw malaPeticion('El contrato está finalizado')
   return contrato
+}
+
+/** Valida solo los contratos que el equipo no tenía ya asignados. */
+async function validarContratosNuevos(equipo: Equipo, previos: string[] = []) {
+  const existentes = new Set(previos)
+  for (const contratoId of contratosDeEquipo(equipo)) {
+    if (!existentes.has(contratoId)) await validarContrato(contratoId, equipo.empresaId)
+  }
 }
 
 function indices(eq: Equipo) {
@@ -45,10 +53,23 @@ function normalizarCodigo(valor: unknown): string {
 }
 
 function armarEquipo(datos: Partial<Equipo>, empresaId: string, id?: string): Equipo {
+  // Un equipo puede pertenecer a varios contratos, o a ninguno.
+  const contratoIds = [
+    ...new Set(
+      (Array.isArray(datos.contratoIds)
+        ? datos.contratoIds
+        : datos.contratoId
+          ? [datos.contratoId]
+          : []
+      ).filter((c): c is string => typeof c === 'string' && Boolean(c)),
+    ),
+  ]
   return {
     id: id ?? nuevoId('eq'),
     empresaId,
-    contratoId: datos.contratoId ?? null,
+    // El primero de la lista se replica aquí por compatibilidad.
+    contratoId: contratoIds[0] ?? null,
+    contratoIds,
     codigo: normalizarCodigo(datos.codigo),
     sistema: texto(datos.sistema),
     tipo: texto(datos.tipo),
@@ -120,8 +141,7 @@ export async function crear(req: Peticion) {
   const motivo = motivoInvalido(equipo)
   if (motivo) throw malaPeticion(motivo)
 
-  if (!equipo.contratoId) throw malaPeticion('Debe elegir el contrato de ingreso del equipo')
-  await validarContrato(equipo.contratoId, equipo.empresaId)
+  await validarContratosNuevos(equipo)
 
   const [existente] = await query<Equipo>({
     index: 'GSI2',
@@ -141,8 +161,12 @@ export async function actualizar(req: Peticion, id: string) {
   if (!actual) throw noEncontrado('Equipo no encontrado')
 
   const datos = cuerpo<Partial<Equipo>>(req)
+  // Compatibilidad: peticiones antiguas envían un solo `contratoId`.
+  if (datos.contratoIds === undefined && datos.contratoId !== undefined) {
+    datos.contratoIds = datos.contratoId ? [datos.contratoId] : []
+  }
   const fusionado = armarEquipo(
-    { ...actual, ...datos },
+    { ...actual, ...datos, contratoIds: datos.contratoIds ?? contratosDeEquipo(actual) },
     datos.empresaId ?? actual.empresaId,
     id,
   )
@@ -153,13 +177,7 @@ export async function actualizar(req: Peticion, id: string) {
   if (fusionado.empresaId !== actual.empresaId) {
     throw malaPeticion('No se puede trasladar un equipo a otra empresa')
   }
-  if (actual.contratoId && fusionado.contratoId !== actual.contratoId) {
-    throw malaPeticion('El contrato de ingreso se conserva para mantener la trazabilidad')
-  }
-  if (!fusionado.contratoId) throw malaPeticion('Debe elegir el contrato de ingreso del equipo')
-  if (fusionado.contratoId !== actual.contratoId) {
-    await validarContrato(fusionado.contratoId, fusionado.empresaId)
-  }
+  await validarContratosNuevos(fusionado, contratosDeEquipo(actual))
 
   const { id: _id, ...campos } = fusionado
   void _id
@@ -217,9 +235,9 @@ export async function importar(req: Peticion) {
   const empresa = await get<Empresa>(k.empresa(empresaId))
   if (!empresa) throw noEncontrado('La empresa indicada no existe')
 
-  // El contrato se elige junto a la empresa y aplica a todo el archivo.
-  if (!contratoId) throw malaPeticion('Debe elegir el contrato de ingreso de los equipos')
-  await validarContrato(contratoId, empresaId)
+  // El contrato es opcional y aplica a todo el archivo: los equipos nuevos lo
+  // reciben y los existentes lo suman a sus contratos.
+  if (contratoId) await validarContrato(contratoId, empresaId)
 
   // Una sola lectura del inventario para detectar duplicados.
   const existentes = await query<Equipo>({ index: 'GSI2', pk: 'T#EQUIPO' })
@@ -231,7 +249,10 @@ export async function importar(req: Peticion) {
   for (const [i, datos] of equipos.entries()) {
     // +2 porque la primera fila del archivo son los encabezados.
     const fila = i + 2
-    const equipo = armarEquipo({ ...datos, contratoId: contratoId ?? null }, empresaId)
+    const equipo = armarEquipo(
+      { ...datos, contratoIds: contratoId ? [contratoId] : [] },
+      empresaId,
+    )
 
     const motivo = motivoInvalido(equipo)
     if (motivo) {
@@ -266,8 +287,14 @@ export async function importar(req: Peticion) {
         continue
       }
       // Se conserva el historial: mismo identificador, estado y última visita.
+      // Los contratos previos se mantienen y se suma el del archivo.
       const fusionado = armarEquipo(
-        { ...equipo, contratoId: previo.contratoId || contratoId, estado: previo.estado, ultimaRevision: previo.ultimaRevision },
+        {
+          ...equipo,
+          contratoIds: [...contratosDeEquipo(previo), ...(contratoId ? [contratoId] : [])],
+          estado: previo.estado,
+          ultimaRevision: previo.ultimaRevision,
+        },
         empresaId,
         previo.id,
       )

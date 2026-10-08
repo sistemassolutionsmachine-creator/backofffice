@@ -255,7 +255,8 @@ export async function leerArchivoEquipos(archivo: File): Promise<LecturaArchivo>
     for (const [col, campo] of mapa) {
       const valor = String(cruda[col] ?? '').trim()
       if (valor) tieneContenido = true
-      datos[campo] = valor
+      // La plantilla solo contiene columnas de texto de la ficha.
+      ;(datos as Record<string, string>)[campo] = valor
     }
 
     if (tieneContenido) filas.push({ fila: i + 1, datos })

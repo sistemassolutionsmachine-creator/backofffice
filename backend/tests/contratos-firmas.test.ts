@@ -79,27 +79,44 @@ test('contratos: editar un registro leído de DynamoDB no intenta modificar PK/S
   assert.equal(registros.get(clave(k.contrato('ct-1')))?.estado, 'finalizado')
 })
 
-test('equipos: exige contrato activo de la misma empresa', async () => {
-  for (const contratoId of [null, 'inexistente', 'ct-3', 'ct-4']) {
+test('equipos: el contrato es opcional pero debe ser activo y de la misma empresa', async () => {
+  for (const contratoId of ['inexistente', 'ct-3', 'ct-4']) {
     await assert.rejects(equipos.crear(req({ ...equipoNuevo, contratoId })), { statusCode: 400 })
   }
+  // Sin contrato: queda pendiente de asignación.
+  const suelto = JSON.parse((await equipos.crear(req({ ...equipoNuevo, codigo: 'QR-0', contratoId: null }))).body)
+  assert.equal(suelto.contratoId, null)
+  assert.deepEqual(suelto.contratoIds, [])
+
   const r = JSON.parse((await equipos.crear(req(equipoNuevo))).body)
   assert.equal(r.contratoId, 'ct-1')
+  assert.deepEqual(r.contratoIds, ['ct-1'])
   assert.equal(r.empresaId, 'em-1')
 })
 
-test('equipos: inventario anterior se asigna y no pierde identificación ni historial', async () => {
+test('equipos: un mismo equipo puede pertenecer a varios contratos', async () => {
   insertar({ ...k.equipo('eq-viejo'), id: 'eq-viejo', ...equipoNuevo, contratoId: null, estado: 'mantenimiento', ultimaRevision: '2026-09-15' })
   const r = JSON.parse((await equipos.actualizar(req({ contratoId: 'ct-1' }), 'eq-viejo')).body)
   assert.equal(r.id, 'eq-viejo')
   assert.equal(r.contratoId, 'ct-1')
   assert.equal(r.ultimaRevision, '2026-09-15')
   assert.equal(r.estado, 'mantenimiento')
-  await assert.rejects(equipos.actualizar(req({ contratoId: 'ct-2' }), 'eq-viejo'), { statusCode: 400 })
-  await assert.rejects(equipos.actualizar(req({ contratoId: null }), 'eq-viejo'), { statusCode: 400 })
+
+  // Se suma un segundo contrato sin perder el primero.
+  const doble = JSON.parse((await equipos.actualizar(req({ contratoIds: ['ct-1', 'ct-2'] }), 'eq-viejo')).body)
+  assert.deepEqual(doble.contratoIds, ['ct-1', 'ct-2'])
+  assert.equal(doble.contratoId, 'ct-1')
+
+  // Los contratos nuevos se validan; los ya asignados se conservan tal cual.
+  await assert.rejects(equipos.actualizar(req({ contratoIds: ['ct-1', 'ct-3'] }), 'eq-viejo'), { statusCode: 400 })
+
+  // Y también se puede desprender de todos.
+  const libre = JSON.parse((await equipos.actualizar(req({ contratoIds: [] }), 'eq-viejo')).body)
+  assert.deepEqual(libre.contratoIds, [])
+  assert.equal(libre.contratoId, null)
 })
 
-test('importación: separa nuevos de antiguos y conserva contrato e historial anteriores', async () => {
+test('importación: separa nuevos de antiguos y suma el contrato a los existentes', async () => {
   insertar({ ...k.equipo('eq-antiguo'), id: 'eq-antiguo', ...equipoNuevo, estado: 'mantenimiento', ultimaRevision: '2026-09-01', GSI2PK: 'T#EQUIPO', GSI2SK: 'QR-1' })
   insertar({ ...k.equipo('eq-ajeno'), id: 'eq-ajeno', ...equipoNuevo, empresaId: 'em-2', codigo: 'AJENO', GSI2PK: 'T#EQUIPO', GSI2SK: 'AJENO' })
   const r = JSON.parse((await equipos.importar(req({ empresaId: 'em-1', contratoId: 'ct-2', actualizarExistentes: true,
@@ -108,17 +125,32 @@ test('importación: separa nuevos de antiguos y conserva contrato e historial an
   assert.equal(r.actualizados, 1)
   assert.equal(r.errores, 1)
   const viejo = registros.get(clave(k.equipo('eq-antiguo')))!
+  // Conserva su contrato original y suma el del archivo.
+  assert.deepEqual(viejo.contratoIds, ['ct-1', 'ct-2'])
   assert.equal(viejo.contratoId, 'ct-1')
   assert.equal(viejo.ultimaRevision, '2026-09-01')
   assert.equal(viejo.estado, 'mantenimiento')
-  assert.equal([...registros.values()].find((v) => v.codigo === 'NUEVO')?.contratoId, 'ct-2')
+  assert.deepEqual([...registros.values()].find((v) => v.codigo === 'NUEVO')?.contratoIds, ['ct-2'])
   assert.equal(registros.get(clave(k.equipo('eq-ajeno')))?.empresaId, 'em-2')
 })
 
-test('contratos con equipos no se borran', async () => {
+test('importación sin contrato: los nuevos quedan pendientes y los antiguos no cambian', async () => {
+  insertar({ ...k.equipo('eq-antiguo'), id: 'eq-antiguo', ...equipoNuevo, GSI2PK: 'T#EQUIPO', GSI2SK: 'QR-1' })
+  const r = JSON.parse((await equipos.importar(req({ empresaId: 'em-1', actualizarExistentes: true,
+    equipos: [equipoNuevo, { ...equipoNuevo, codigo: 'NUEVO' }] }))).body)
+  assert.equal(r.creados, 1)
+  assert.equal(r.actualizados, 1)
+  assert.deepEqual(registros.get(clave(k.equipo('eq-antiguo')))?.contratoIds, ['ct-1'])
+  assert.deepEqual([...registros.values()].find((v) => v.codigo === 'NUEVO')?.contratoIds, [])
+})
+
+test('contratos con equipos no se borran, incluso como segundo contrato', async () => {
   insertar({ ...k.equipo('eq-1'), id: 'eq-1', ...equipoNuevo, GSI1PK: 'EMPRESA#em-1', GSI1SK: 'EQUIPO#QR-1' })
   await assert.rejects(contratos.eliminar(req(), 'ct-1'), { statusCode: 400 })
   assert.equal(registros.has(clave(k.contrato('ct-1'))), true)
+
+  insertar({ ...k.equipo('eq-2'), id: 'eq-2', ...equipoNuevo, codigo: 'QR-2', contratoId: 'ct-1', contratoIds: ['ct-1', 'ct-2'], GSI1PK: 'EMPRESA#em-1', GSI1SK: 'EQUIPO#QR-2' })
+  await assert.rejects(contratos.eliminar(req(), 'ct-2'), { statusCode: 400 })
 })
 
 test('firma: se guarda en el usuario autenticado y regresa en un nuevo login sin secretos', async () => {
