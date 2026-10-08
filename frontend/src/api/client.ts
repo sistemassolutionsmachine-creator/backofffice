@@ -6,6 +6,7 @@ import type {
   Equipo,
   Revision,
   RevisionDetalle,
+  Turno,
   Usuario,
 } from '../types'
 
@@ -16,7 +17,7 @@ import type {
  * rutas relativas: no hay CORS ni URLs que configurar por entorno.
  */
 
-const BASE = '/api'
+const BASE = `${import.meta.env.BASE_URL}api`
 const CLAVE_TOKEN = 'sm-token'
 
 export class ErrorApi extends Error {
@@ -186,6 +187,16 @@ export const api = {
       }),
   },
 
+  /* ---------- Turnos del técnico ---------- */
+  turnos: {
+    /** Turno abierto del técnico con sesión iniciada, o null. */
+    activo: () => get<Turno | null>('/turnos/activo'),
+    iniciar: () => post<Turno>('/turnos'),
+    cerrar: (id: string) => post<Turno>(`/turnos/${id}/cerrar`),
+    listar: (tecnicoId?: string) =>
+      get<Turno[]>(tecnicoId ? `/turnos?tecnico=${encodeURIComponent(tecnicoId)}` : '/turnos'),
+  },
+
   /* ---------- Revisiones ---------- */
   revisiones: {
     listar: (filtros: { empresa?: string; equipo?: string } = {}) => {
@@ -195,6 +206,20 @@ export const api = {
       const qs = p.toString()
       return get<Revision[]>(`/revisiones${qs ? `?${qs}` : ''}`)
     },
+
+    /** Borradores: el técnico recibe los suyos; el admin, los de todos. */
+    borradores: (tecnicoId?: string) => {
+      const p = new URLSearchParams({ borradores: '1' })
+      if (tecnicoId) p.set('tecnico', tecnicoId)
+      return get<Revision[]>(`/revisiones?${p.toString()}`)
+    },
+
+    /** Descarta un borrador y sus evidencias. */
+    eliminarBorrador: (equipoId: string, id: string) => del(`/revisiones/${equipoId}/${id}`),
+
+    /** El administrador termina la supervisión: el cliente ya puede verlo. */
+    supervisar: (equipoId: string, id: string) =>
+      post<Revision>(`/revisiones/${equipoId}/${id}/supervisar`),
     obtener: (equipoId: string, id: string) =>
       get<RevisionDetalle>(`/revisiones/${equipoId}/${id}`),
     crear: (datos: Partial<Revision>) => post<Revision>('/revisiones', datos),

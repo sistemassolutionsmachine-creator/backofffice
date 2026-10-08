@@ -12,10 +12,10 @@ import type { Empresa, Equipo } from '../types'
  */
 
 /** Dominio del portal. Los QR apuntan aquí, así que debe ser el de producción. */
-const PORTAL = 'https://d2u9ifgrghgtoq.cloudfront.net'
+const PORTAL = 'https://solutionsmachine.com.co/appservices'
 
 export function urlDeEquipo(codigo: string) {
-  return `${PORTAL}/t/${codigo}`
+  return `${PORTAL}/t/${encodeURIComponent(codigo)}`
 }
 
 /* ---------- Composición de la etiqueta ---------- */

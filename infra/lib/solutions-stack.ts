@@ -8,6 +8,7 @@ import {
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2'
 import * as integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import * as budgets from 'aws-cdk-lib/aws-budgets'
+import * as acm from 'aws-cdk-lib/aws-certificatemanager'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
@@ -25,6 +26,10 @@ export interface SolutionsStackProps extends StackProps {
   emailAlertas?: string
   /** Tope mensual en USD para la alerta de presupuesto. */
   presupuestoUsd?: number
+  /** Dominio propio que el proxy del hosting envía como Host a CloudFront. */
+  dominio?: string
+  /** Certificado de ACM en us-east-1 que cubre `dominio`. */
+  certificadoArn?: string
 }
 
 /**
@@ -44,7 +49,7 @@ export class SolutionsStack extends Stack {
   constructor(scope: Construct, id: string, props: SolutionsStackProps = {}) {
     super(scope, id, props)
 
-    const { emailAlertas, presupuestoUsd = 5 } = props
+    const { emailAlertas, presupuestoUsd = 5, dominio, certificadoArn } = props
 
     /* ---------------- Datos ---------------- */
 
@@ -140,7 +145,7 @@ export class SolutionsStack extends Stack {
         // Remitente verificado en SES. Sin él, los enlaces de activación se
         // muestran en pantalla al administrador en vez de enviarse.
         EMAIL_REMITENTE: process.env.EMAIL_REMITENTE ?? '',
-        URL_PORTAL: process.env.URL_PORTAL ?? '',
+        URL_PORTAL: process.env.URL_PORTAL ?? 'https://solutionsmachine.com.co/appservices',
         NODE_OPTIONS: '--enable-source-maps',
       },
       bundling: {
@@ -205,6 +210,11 @@ export class SolutionsStack extends Stack {
 function handler(event) {
   var request = event.request;
   var uri = request.uri;
+  // Los archivos se almacenan en la raíz de S3, pero se publican bajo el prefijo.
+  if (uri === '/appservices' || uri.startsWith('/appservices/')) {
+    uri = uri.slice('/appservices'.length) || '/';
+    request.uri = uri;
+  }
   // Si la ruta no apunta a un archivo concreto, la resuelve React Router.
   if (!uri.includes('.')) {
     request.uri = '/index.html';
@@ -219,6 +229,13 @@ function handler(event) {
       defaultRootObject: 'index.html',
       // La clase 100 usa solo las ubicaciones más baratas (NA y Europa).
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      ...(dominio && certificadoArn
+        ? {
+            domainNames: [dominio],
+            certificate: acm.Certificate.fromCertificateArn(this, 'Certificado', certificadoArn),
+            minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+          }
+        : {}),
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(bucketWeb),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -246,6 +263,17 @@ function handler(event) {
         },
       },
     })
+
+    distribucion.addBehavior(
+      '/appservices/api/*',
+      new origins.HttpOrigin(`${httpApi.apiId}.execute-api.${this.region}.amazonaws.com`),
+      {
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      },
+    )
 
     // Publica el build de Vite e invalida la caché en cada despliegue.
     new s3deploy.BucketDeployment(this, 'DesplegarWeb', {

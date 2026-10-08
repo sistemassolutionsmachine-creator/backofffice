@@ -56,7 +56,7 @@ export function LoginPage() {
         <div className="pointer-events-none absolute -bottom-40 -left-24 size-96 rounded-full bg-brand-600/10 blur-3xl" />
         {/* Marca de agua con el isotipo */}
         <img
-          src="/icon.png"
+          src={`${import.meta.env.BASE_URL}icon.png`}
           alt=""
           aria-hidden="true"
           className="pointer-events-none absolute -right-24 -bottom-24 w-[26rem] rotate-12 opacity-10 select-none lg:w-[32rem]"
@@ -65,7 +65,7 @@ export function LoginPage() {
         <div className="relative flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-xl bg-white p-1.5 shadow-lg">
             <img
-              src="/icon.png"
+              src={`${import.meta.env.BASE_URL}icon.png`}
               alt="Solutions Machine"
               className="h-full w-full object-contain"
             />

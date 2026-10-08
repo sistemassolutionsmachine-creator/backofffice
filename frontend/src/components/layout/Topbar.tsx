@@ -25,7 +25,7 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           </button>
           <div className="flex items-center gap-2 lg:hidden">
             <img
-              src="/icon.png"
+              src={`${import.meta.env.BASE_URL}icon.png`}
               alt="Solutions Machine"
               className="size-8 shrink-0 object-contain"
             />

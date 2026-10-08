@@ -57,7 +57,7 @@ export function TecnicoLoginPage() {
       <div className="pointer-events-none fixed -bottom-40 -left-24 size-96 rounded-full bg-brand-600/10 blur-3xl" />
       {/* Marca de agua con el isotipo */}
       <img
-        src="/icon.png"
+        src={`${import.meta.env.BASE_URL}icon.png`}
         alt=""
         aria-hidden="true"
         className="pointer-events-none fixed -right-20 -bottom-20 w-80 rotate-12 opacity-10 select-none"
@@ -68,7 +68,7 @@ export function TecnicoLoginPage() {
         <div className="flex items-center justify-center gap-3">
           <div className="flex size-11 items-center justify-center rounded-xl bg-white p-1.5 shadow-lg">
             <img
-              src="/icon.png"
+              src={`${import.meta.env.BASE_URL}icon.png`}
               alt="Solutions Machine"
               className="h-full w-full object-contain"
             />

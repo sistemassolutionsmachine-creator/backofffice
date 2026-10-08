@@ -185,6 +185,7 @@ export function EstadoRevisionBadge({ estado }: { estado: EstadoRevision }) {
     completado: { label: 'Completado', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
     en_proceso: { label: 'En proceso', cls: 'bg-sky-50 text-sky-700 ring-sky-200' },
     pendiente: { label: 'Pendiente', cls: 'bg-zinc-100 text-zinc-600 ring-zinc-200' },
+    borrador: { label: 'Borrador', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
   }
   const s = map[estado]
   return (
@@ -286,7 +287,7 @@ export function LogoSM({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white p-1 shadow-md">
-        <img src="/icon.png" alt="Solutions Machine" className="h-full w-full object-contain" />
+        <img src={`${import.meta.env.BASE_URL}icon.png`} alt="Solutions Machine" className="h-full w-full object-contain" />
       </div>
       {!compact && (
         <div className="leading-tight">

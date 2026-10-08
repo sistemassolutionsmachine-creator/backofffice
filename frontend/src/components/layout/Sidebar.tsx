@@ -30,7 +30,7 @@ export function Sidebar({
     <aside className={cx('flex-col overflow-hidden bg-ink-950 text-zinc-300', className)}>
       {/* Marca de agua con el isotipo */}
       <img
-        src="/icon.png"
+        src={`${import.meta.env.BASE_URL}icon.png`}
         alt=""
         aria-hidden="true"
         className="pointer-events-none absolute -bottom-20 -left-20 w-72 -rotate-12 opacity-[0.07] select-none"

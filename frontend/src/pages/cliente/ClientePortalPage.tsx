@@ -272,7 +272,7 @@ export function ClientePortalPage() {
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <img src="/icon.png" alt="Solutions Machine" className="size-9 shrink-0 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}icon.png`} alt="Solutions Machine" className="size-9 shrink-0 object-contain" />
             <div className="leading-tight">
               <p className="text-sm font-bold text-zinc-900">Solutions Machine</p>
               <p className="text-[10px] font-semibold tracking-wide text-brand-600 uppercase">
@@ -297,7 +297,7 @@ export function ClientePortalPage() {
           <div className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-brand-600/30 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-28 left-1/3 size-72 rounded-full bg-brand-600/10 blur-3xl" />
           <img
-            src="/icon.png"
+            src={`${import.meta.env.BASE_URL}icon.png`}
             alt=""
             aria-hidden="true"
             className="pointer-events-none absolute -right-10 -bottom-12 w-56 rotate-12 opacity-[0.07] select-none"

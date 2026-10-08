@@ -11,13 +11,14 @@ import tailwindcss from '@tailwindcss/vite'
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const destinoApi = env.VITE_API_ORIGIN ?? 'https://d2u9ifgrghgtoq.cloudfront.net'
+  const destinoApi = env.VITE_API_ORIGIN ?? 'https://dyhxpji5c2d6x.cloudfront.net'
 
   return {
+    base: '/appservices/',
     plugins: [react(), tailwindcss()],
     server: {
       proxy: {
-        '/api': {
+        '/appservices/api': {
           target: destinoApi,
           changeOrigin: true,
           secure: true,

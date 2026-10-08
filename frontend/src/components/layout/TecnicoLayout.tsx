@@ -22,7 +22,7 @@ export function TecnicoLayout() {
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
             <img
-              src="/icon.png"
+              src={`${import.meta.env.BASE_URL}icon.png`}
               alt="Solutions Machine"
               className="size-9 shrink-0 object-contain"
             />
