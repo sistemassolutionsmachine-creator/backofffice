@@ -304,12 +304,17 @@ Todas las rutas van bajo `/api`. Autenticación por `Authorization: Bearer <jwt>
 | GET | `/equipos/codigo/:codigo` | cualquiera | Resolver un QR |
 | POST | `/equipos` | admin | Crear |
 | PUT/DELETE | `/equipos/:id` | admin | Editar / eliminar |
-| GET | `/revisiones` | cualquiera | Historial, filtros `?empresa=` `?equipo=` |
+| GET | `/revisiones` | cualquiera | Historial, filtros `?empresa=` `?equipo=` `?borradores=1` (el cliente solo ve reportes supervisados) |
 | GET | `/revisiones/:equipoId/:id` | cualquiera | Detalle con enlaces a fotos y PDF |
 | POST | `/revisiones` | técnico, admin | Crear (asigna consecutivo) |
 | PUT | `/revisiones/:equipoId/:id` | técnico, admin | Actualizar |
 | POST | `/revisiones/evidencias` | técnico, admin | URL prefirmada para subir foto |
 | POST | `/revisiones/pdf` | técnico, admin | URL prefirmada para subir el PDF |
+| POST | `/revisiones/:equipoId/:id/supervisar` | admin | Termina la supervisión: el cliente ya puede ver y firmar |
+| DELETE | `/revisiones/:equipoId/:id` | técnico, admin | Elimina un borrador (nunca reportes registrados) |
+| GET/POST | `/turnos` | técnico, admin | Historial de turnos / iniciar turno |
+| GET | `/turnos/activo` | técnico | Turno abierto del técnico |
+| POST | `/turnos/:id/cerrar` | técnico, admin | Finaliza el turno |
 | GET/POST | `/usuarios` | admin | Listar / crear |
 | PUT/DELETE | `/usuarios/:id` | admin | Editar / eliminar |
 | POST | `/usuarios/:id/pin` | admin | Restablecer PIN |

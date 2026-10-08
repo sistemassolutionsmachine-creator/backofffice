@@ -81,7 +81,7 @@ export function nombreVisible(eq: Pick<Equipo, 'nombre' | 'tipo'>) {
 
 export type TipoServicio = 'preventivo' | 'correctivo' | 'revision' | 'instalacion'
 
-export type EstadoRevision = 'completado' | 'en_proceso' | 'pendiente'
+export type EstadoRevision = 'completado' | 'en_proceso' | 'pendiente' | 'borrador'
 
 export interface Revision {
   id: string
@@ -126,6 +126,22 @@ export interface Revision {
     estilo: string
     fecha: string
   } | null
+  /** Turno del técnico en que se creó el reporte. */
+  turnoId?: string | null
+  /** Los reportes nuevos solo se muestran al cliente tras la supervisión. */
+  requiereSupervision?: boolean
+  supervision?: { por: string; porId: string; fecha: string } | null
+  /** Estado crudo del formulario, para reanudar borradores o editar reportes. */
+  borradorDatos?: unknown
+}
+
+/** Jornada de trabajo del técnico. Agrupa sus borradores y reportes. */
+export interface Turno {
+  id: string
+  tecnicoId: string
+  tecnico: string
+  inicio: string
+  fin: string | null
 }
 
 /** Revisión con enlaces temporales para ver fotos y PDF. */

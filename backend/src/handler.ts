@@ -17,6 +17,7 @@ import * as contratos from './routes/contratos.js'
 import * as empresas from './routes/empresas.js'
 import * as equipos from './routes/equipos.js'
 import * as revisiones from './routes/revisiones.js'
+import * as turnos from './routes/turnos.js'
 import * as usuarios from './routes/usuarios.js'
 
 /**
@@ -84,10 +85,21 @@ async function enrutar(req: Peticion): Promise<Respuesta> {
       if (a && b && c === 'firmar' && m === 'POST') {
         return revisiones.firmarCliente(req, a, b)
       }
+      if (a && b && c === 'supervisar' && m === 'POST') {
+        return revisiones.supervisar(req, a, b)
+      }
       if (a && b && !c && m === 'GET') return revisiones.obtener(req, a, b)
       if (a && b && (m === 'PUT' || m === 'PATCH')) {
         return revisiones.actualizar(req, a, b)
       }
+      if (a && b && !c && m === 'DELETE') return revisiones.eliminarBorrador(req, a, b)
+      break
+
+    case 'turnos':
+      if (!a && m === 'POST') return turnos.iniciar(req)
+      if (!a && m === 'GET') return turnos.listar(req)
+      if (a === 'activo' && m === 'GET') return turnos.activo(req)
+      if (a && b === 'cerrar' && m === 'POST') return turnos.cerrar(req, a)
       break
 
     case 'usuarios':
@@ -112,7 +124,7 @@ export async function handler(
   // CloudFront sirve el frontend y la API bajo el mismo dominio: sin CORS.
   if (metodo === 'OPTIONS') return sinContenido()
 
-  const ruta = (evento.rawPath ?? '/').replace(/^\/api/, '')
+  const ruta = (evento.rawPath ?? '/').replace(/^\/(?:appservices\/)?api(?=\/|$)/, '')
   const segmentos = ruta.split('/').filter(Boolean)
 
   let body: unknown = null

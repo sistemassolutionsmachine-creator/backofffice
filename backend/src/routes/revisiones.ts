@@ -9,6 +9,7 @@ import {
   nuevoId,
   put,
   query,
+  remove,
   update,
 } from '../lib/dynamo.js'
 import {
@@ -20,12 +21,23 @@ import {
   noEncontrado,
   ok,
   prohibido,
+  sinContenido,
   type Peticion,
 } from '../lib/http.js'
-import { claveEvidencia, clavePdf, comprobarPdf, urlDeDescarga, urlDeSubida } from '../lib/s3.js'
+import { claveEvidencia, clavePdf, comprobarPdf, eliminarObjetos, urlDeDescarga, urlDeSubida } from '../lib/s3.js'
+import { turnoActivoDe } from './turnos.js'
 import type { EstadoEquipo, Equipo, Revision } from '../types.js'
 
 const ESTADOS_EQUIPO: EstadoEquipo[] = ['operativo', 'mantenimiento', 'fuera_servicio']
+
+/**
+ * Visibilidad para el cliente: solo reportes completados cuya supervisión
+ * terminó. Los anteriores a la supervisión (sin `requiereSupervision`) se
+ * consideran ya entregados y siguen visibles.
+ */
+function visibleParaCliente(r: Revision) {
+  return r.estado === 'completado' && (!r.requiereSupervision || Boolean(r.supervision))
+}
 
 /** undefined si no viene en la petición; error si viene con un valor desconocido. */
 function leerEstadoEquipo(valor: unknown): EstadoEquipo | null | undefined {
@@ -112,6 +124,20 @@ export async function listar(req: Peticion) {
   const auth = exigir(req)
   const limite = Math.min(Number(req.query.limite ?? 100), 200)
 
+  // Borradores: el técnico recupera los suyos; el administrador, los de todos.
+  if (req.query.borradores) {
+    if (auth.rol === 'cliente') throw prohibido()
+    const tecnicoId = auth.rol === 'tecnico' ? auth.sub : req.query.tecnico
+    const borradores = await query<Revision>({
+      index: 'GSI2',
+      pk: 'T#BORRADOR',
+      sk: tecnicoId ? `${tecnicoId}#` : undefined,
+      ascendente: false,
+      limite,
+    })
+    return ok(borradores.map(limpiar))
+  }
+
   // Historial de un equipo concreto.
   if (req.query.equipo) {
     const equipo = await get<Equipo>(k.equipo(req.query.equipo))
@@ -124,7 +150,9 @@ export async function listar(req: Peticion) {
       ascendente: false,
       limite,
     })
-    return ok(revisiones.map(limpiar))
+    return ok(
+      (auth.rol === 'cliente' ? revisiones.filter(visibleParaCliente) : revisiones).map(limpiar),
+    )
   }
 
   // El cliente siempre queda acotado a su empresa.
@@ -145,7 +173,9 @@ export async function listar(req: Peticion) {
         limite,
       })
 
-  return ok(revisiones.map(limpiar))
+  return ok(
+    (auth.rol === 'cliente' ? revisiones.filter(visibleParaCliente) : revisiones).map(limpiar),
+  )
 }
 
 export async function obtener(req: Peticion, equipoId: string, revisionId: string) {
@@ -153,7 +183,9 @@ export async function obtener(req: Peticion, equipoId: string, revisionId: strin
   const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
   const revision = revisiones.find((r) => r.id === revisionId)
   if (!revision) throw noEncontrado('Revisión no encontrada')
-  if (auth.rol === 'cliente' && revision.empresaId !== auth.empresaId) throw prohibido()
+  if (auth.rol === 'cliente' && (revision.empresaId !== auth.empresaId || !visibleParaCliente(revision))) {
+    throw prohibido()
+  }
 
   // Enlaces temporales para ver las evidencias y descargar el PDF.
   const [fotosEntrada, fotosSalida, pdfUrl] = await Promise.all([
@@ -177,7 +209,10 @@ export async function crear(req: Peticion) {
 
   const id = nuevoId('rv')
   const fecha = datos.fecha ?? new Date().toISOString().slice(0, 10)
-  const consecutivo = await siguienteConsecutivo()
+  const esBorrador = datos.estado === 'borrador'
+  // Los borradores no consumen consecutivo: se asigna al registrar el reporte.
+  const consecutivo = esBorrador ? '' : await siguienteConsecutivo()
+  const turno = auth.rol === 'tecnico' ? await turnoActivoDe(auth.sub) : null
 
   const revision: Revision = {
     id,
@@ -206,32 +241,47 @@ export async function crear(req: Peticion) {
     documentoVersion: 1,
     firmaTecnico: datos.firmaTecnico ?? null,
     firmaCliente: null,
+    turnoId: turno?.id ?? null,
+    requiereSupervision: true,
+    supervision: null,
+    borradorDatos: datos.borradorDatos ?? null,
   }
 
   await put({
     ...k.revision(revision.equipoId, fecha, id),
     GSI1PK: `EMPRESA#${revision.empresaId}`,
     GSI1SK: `REVISION#${fecha}#${id}`,
-    GSI2PK: 'T#REVISION',
-    GSI2SK: `${fecha}#${id}`,
+    // Los borradores viven en su propia partición, indexados por técnico.
+    GSI2PK: esBorrador ? 'T#BORRADOR' : 'T#REVISION',
+    GSI2SK: esBorrador ? `${auth.sub}#${fecha}#${id}` : `${fecha}#${id}`,
     ...revision,
   })
 
-  // El equipo refleja siempre su última intervención.
-  await update(k.equipo(equipo.id), { ultimaRevision: fecha })
-  await reflejarEnEquipo(revision)
+  if (!esBorrador) {
+    // El equipo refleja siempre su última intervención.
+    await update(k.equipo(equipo.id), { ultimaRevision: fecha })
+    await reflejarEnEquipo(revision)
+  }
 
   return creado(revision)
 }
 
 export async function actualizar(req: Peticion, equipoId: string, revisionId: string) {
-  exigir(req, 'tecnico', 'admin')
+  const auth = exigir(req, 'tecnico', 'admin')
   const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
   const actual = revisiones.find((r) => r.id === revisionId)
   if (!actual) throw noEncontrado('Revisión no encontrada')
   if (actual.firmaCliente) throw malaPeticion('No se puede editar un reporte firmado por el cliente')
+  // Un técnico solo retoma sus propios borradores.
+  if (actual.estado === 'borrador' && auth.rol === 'tecnico' && actual.tecnicoId !== auth.sub) {
+    throw prohibido('Este borrador pertenece a otro técnico')
+  }
 
   const datos = cuerpo<Partial<Revision>>(req)
+  if (datos.estado === 'borrador' && actual.estado !== 'borrador') {
+    throw malaPeticion('Un reporte registrado no puede volver a ser borrador')
+  }
+
   const patch: Record<string, unknown> = {
     estado: datos.estado,
     inspeccionVisual: datos.inspeccionVisual,
@@ -246,6 +296,7 @@ export async function actualizar(req: Peticion, equipoId: string, revisionId: st
     fotosSalida: datos.fotosSalida,
     firmaTecnico: datos.firmaTecnico,
     estadoEquipo: leerEstadoEquipo(datos.estadoEquipo),
+    borradorDatos: datos.borradorDatos,
     documentoVersion: (actual.documentoVersion ?? 0) + 1,
   }
 
@@ -254,9 +305,67 @@ export async function actualizar(req: Peticion, equipoId: string, revisionId: st
     throw malaPeticion('Indique en qué estado queda el equipo antes de completar el reporte')
   }
 
+  // El borrador se registra: toma consecutivo y entra al historial general.
+  const registra = actual.estado === 'borrador' && datos.estado && datos.estado !== 'borrador'
+  if (registra) {
+    patch.consecutivo = await siguienteConsecutivo()
+    patch.GSI2PK = 'T#REVISION'
+    patch.GSI2SK = `${actual.fecha}#${actual.id}`
+  }
+
   const guardada = await guardarVersion(actual, patch)
+  if (registra) {
+    await update(k.equipo(actual.equipoId), { ultimaRevision: actual.fecha })
+  }
   await reflejarEnEquipo(guardada)
   return ok(guardada)
+}
+
+/** Descarta un borrador y sus evidencias. Nunca borra reportes registrados. */
+export async function eliminarBorrador(req: Peticion, equipoId: string, revisionId: string) {
+  const auth = exigir(req, 'tecnico', 'admin')
+  const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
+  const revision = revisiones.find((r) => r.id === revisionId)
+  if (!revision) throw noEncontrado('Borrador no encontrado')
+  if (revision.estado !== 'borrador') {
+    throw malaPeticion('Solo se pueden eliminar borradores. Los reportes registrados se conservan.')
+  }
+  if (auth.rol === 'tecnico' && revision.tecnicoId !== auth.sub) {
+    throw prohibido('Este borrador pertenece a otro técnico')
+  }
+
+  await remove(k.revision(revision.equipoId, revision.fecha, revision.id))
+  // Mejor esfuerzo: si las fotos no se pueden borrar, el ciclo de vida de S3 las archiva.
+  try {
+    await eliminarObjetos([...revision.fotosEntrada, ...revision.fotosSalida])
+  } catch (e) {
+    console.error('No se pudieron borrar las evidencias del borrador', { revisionId, error: e })
+  }
+  return sinContenido()
+}
+
+/**
+ * El administrador da por revisado el reporte: desde ese momento el cliente
+ * puede verlo y firmarlo. La edición sigue abierta hasta la firma del cliente.
+ */
+export async function supervisar(req: Peticion, equipoId: string, revisionId: string) {
+  const auth = exigir(req, 'admin')
+  const revisiones = await query<Revision>({ pk: `EQUIPO#${equipoId}`, sk: 'REVISION#' })
+  const revision = revisiones.find((r) => r.id === revisionId)
+  if (!revision) throw noEncontrado('Revisión no encontrada')
+  if (revision.estado !== 'completado') {
+    throw malaPeticion('Solo se puede terminar la supervisión de un reporte completado')
+  }
+  if (revision.supervision) throw malaPeticion('Este reporte ya tiene la supervisión terminada')
+
+  const supervision = {
+    por: auth.usuario,
+    porId: auth.sub,
+    fecha: new Date().toISOString().slice(0, 10),
+  }
+  // No altera el contenido del documento: el PDF archivado sigue siendo válido.
+  await update(k.revision(revision.equipoId, revision.fecha, revision.id), { supervision })
+  return ok(limpiar({ ...revision, supervision }))
 }
 
 /* ---------- Evidencias y PDF ---------- */
@@ -364,6 +473,9 @@ export async function firmarCliente(
   if (revision.empresaId !== auth.empresaId) throw prohibido()
   if (revision.estado !== 'completado') {
     throw malaPeticion('Este reporte todavía no ha sido entregado por el técnico')
+  }
+  if (revision.requiereSupervision && !revision.supervision) {
+    throw malaPeticion('Este reporte está pendiente de supervisión del administrador')
   }
   if (revision.firmaCliente) {
     throw malaPeticion('Este reporte ya fue firmado')

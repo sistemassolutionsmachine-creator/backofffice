@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { FileText, Camera } from 'lucide-react'
+import { BadgeCheck, Camera, FileText, PenLine, ShieldCheck, Trash2 } from 'lucide-react'
 import {
   Card,
   EstadoRevisionBadge,
@@ -24,6 +24,142 @@ const filtros: Array<{ id: TipoServicio | 'todos'; label: string }> = [
   { id: 'revision', label: 'Revisiones' },
 ]
 
+/** Estado de supervisión y acciones del administrador sobre un reporte. */
+function AccionesSupervision({
+  revision,
+  supervisando,
+  onSupervisar,
+}: {
+  revision: Revision
+  supervisando: boolean
+  onSupervisar: (r: Revision) => void
+}) {
+  if (revision.estado !== 'completado') return null
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {revision.firmaCliente ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+          <BadgeCheck className="size-3.5" />
+          Firmado por el cliente
+        </span>
+      ) : (
+        <>
+          {revision.supervision ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200"
+              title={`Supervisado por ${revision.supervision.por} · ${revision.supervision.fecha}`}
+            >
+              <ShieldCheck className="size-3.5" />
+              Supervisado
+            </span>
+          ) : revision.requiereSupervision ? (
+            <button
+              type="button"
+              disabled={supervisando}
+              onClick={() => onSupervisar(revision)}
+              title="El cliente podrá ver y firmar el reporte"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-300 transition-colors hover:bg-amber-100 disabled:opacity-50"
+            >
+              <ShieldCheck className="size-3.5" />
+              {supervisando ? 'Guardando…' : 'Supervisión terminada'}
+            </button>
+          ) : null}
+          {Boolean(revision.borradorDatos) && (
+            <Link
+              to={`/revisiones/nueva?equipo=${revision.equipoId}&revision=${revision.id}`}
+              title="Editar los valores del reporte"
+              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600 ring-1 ring-zinc-200 transition-colors hover:bg-zinc-200"
+            >
+              <PenLine className="size-3.5" />
+              Editar
+            </Link>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Borradores guardados por los técnicos, recuperables desde el portal. */
+function BorradoresDeTecnicos({ al }: { al: (mensaje: string) => void }) {
+  const { getEquipo, getEmpresa } = useData()
+  const [borradores, setBorradores] = useState<Revision[]>([])
+  const [eliminando, setEliminando] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.revisiones
+      .borradores()
+      .then(setBorradores)
+      .catch(() => setBorradores([]))
+  }, [])
+
+  const eliminar = async (r: Revision) => {
+    if (!window.confirm(`¿Eliminar el borrador de ${r.tecnico}? Esta acción no se puede deshacer.`)) return
+    setEliminando(r.id)
+    try {
+      await api.revisiones.eliminarBorrador(r.equipoId, r.id)
+      setBorradores((lista) => lista.filter((b) => b.id !== r.id))
+    } catch (e) {
+      al(e instanceof Error ? e.message : 'No se pudo eliminar el borrador')
+    } finally {
+      setEliminando(null)
+    }
+  }
+
+  if (borradores.length === 0) return null
+
+  return (
+    <Card className="border-amber-200 p-4 sm:p-5">
+      <p className="flex items-center gap-2 text-sm font-bold text-zinc-900">
+        <FileText className="size-4 text-amber-600" />
+        Borradores de técnicos
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+          {borradores.length}
+        </span>
+      </p>
+      <p className="mt-1 text-xs text-zinc-500">
+        Formularios sin terminar guardados durante el turno. Puede retomarlos o descartarlos.
+      </p>
+      <ul className="mt-3 divide-y divide-zinc-100">
+        {borradores.map((r) => {
+          const eq = getEquipo(r.equipoId)
+          return (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-sm font-semibold text-zinc-800">
+                  {eq ? `${eq.codigo} · ${nombreVisible(eq)}` : 'Equipo'}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {r.tecnico} · {formatFecha(r.fecha)}
+                  {eq ? ` · ${getEmpresa(eq.empresaId)?.nombre ?? ''}` : ''}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Link
+                  to={`/revisiones/nueva?equipo=${r.equipoId}&revision=${r.id}`}
+                  className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-700 transition-colors hover:bg-zinc-200"
+                >
+                  Retomar
+                </Link>
+                <button
+                  type="button"
+                  disabled={eliminando === r.id}
+                  onClick={() => void eliminar(r)}
+                  title="Eliminar borrador"
+                  className="flex size-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </Card>
+  )
+}
+
 export function HistorialPage() {
   const { empresas, getEmpresa, getEquipo } = useData()
   const [query, setQuery] = useState('')
@@ -35,6 +171,23 @@ export function HistorialPage() {
     setParams(v ? { empresa: v } : {}, { replace: true })
   const [revisiones, setRevisiones] = useState<Revision[]>([])
   const [, setCargando] = useState(true)
+  const [supervisando, setSupervisando] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  const supervisar = async (r: Revision) => {
+    setSupervisando(r.id)
+    setAviso(null)
+    try {
+      const actualizada = await api.revisiones.supervisar(r.equipoId, r.id)
+      setRevisiones((lista) =>
+        lista.map((x) => (x.id === r.id ? { ...x, supervision: actualizada.supervision } : x)),
+      )
+    } catch (e) {
+      setAviso(e instanceof Error ? e.message : 'No se pudo terminar la supervisión')
+    } finally {
+      setSupervisando(null)
+    }
+  }
 
   // El filtro por empresa se resuelve en el servidor con el índice adecuado.
   useEffect(() => {
@@ -75,6 +228,14 @@ export function HistorialPage() {
         title="Historial de servicios"
         subtitle={`${revisiones.length} registros con consecutivo y trazabilidad completa`}
       />
+
+      <BorradoresDeTecnicos al={setAviso} />
+
+      {aviso && (
+        <Card className="border-brand-200 bg-brand-50 p-3">
+          <p className="text-xs font-semibold text-brand-700">{aviso}</p>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -144,7 +305,14 @@ export function HistorialPage() {
                   {r.fotosEntrada.length + r.fotosSalida.length}
                 </span>
               </div>
-              <div className="mt-3"><DescargarReporteButton revision={r} /></div>
+              <div className="mt-3 space-y-2">
+                <AccionesSupervision
+                  revision={r}
+                  supervisando={supervisando === r.id}
+                  onSupervisar={(rev) => void supervisar(rev)}
+                />
+                {r.estado === 'completado' && <DescargarReporteButton revision={r} />}
+              </div>
             </Card>
           )
         })}
@@ -162,6 +330,7 @@ export function HistorialPage() {
               <th className="px-5 py-3.5">Fecha</th>
               <th className="px-5 py-3.5">Fotos</th>
               <th className="px-5 py-3.5">Estado</th>
+              <th className="px-5 py-3.5">Supervisión</th>
               <th className="px-5 py-3.5 text-right">PDF</th>
             </tr>
           </thead>
@@ -198,6 +367,13 @@ export function HistorialPage() {
                   </td>
                   <td className="px-5 py-3.5">
                     <EstadoRevisionBadge estado={r.estado} />
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <AccionesSupervision
+                      revision={r}
+                      supervisando={supervisando === r.id}
+                      onSupervisar={(rev) => void supervisar(rev)}
+                    />
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end">

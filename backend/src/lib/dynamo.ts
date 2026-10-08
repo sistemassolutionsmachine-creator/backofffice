@@ -36,6 +36,7 @@ export const k = {
   catalogo: () => ({ PK: 'CATALOGO#EQUIPOS', SK: 'META' }),
   equipo: (id: string) => ({ PK: `EQUIPO#${id}`, SK: 'META' }),
   usuario: (id: string) => ({ PK: `USUARIO#${id}`, SK: 'META' }),
+  turno: (id: string) => ({ PK: `TURNO#${id}`, SK: 'META' }),
   revision: (equipoId: string, fecha: string, id: string) => ({
     PK: `EQUIPO#${equipoId}`,
     SK: `REVISION#${fecha}#${id}`,

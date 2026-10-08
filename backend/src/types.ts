@@ -3,7 +3,7 @@
 export type RolUsuario = 'admin' | 'tecnico' | 'cliente'
 export type EstadoEquipo = 'operativo' | 'mantenimiento' | 'fuera_servicio'
 export type TipoServicio = 'preventivo' | 'correctivo' | 'revision' | 'instalacion'
-export type EstadoRevision = 'completado' | 'en_proceso' | 'pendiente'
+export type EstadoRevision = 'completado' | 'en_proceso' | 'pendiente' | 'borrador'
 
 export interface Empresa {
   id: string
@@ -163,6 +163,31 @@ export interface Revision {
     estilo: string
     fecha: string
   } | null
+  /** Turno del técnico en que se creó el reporte. */
+  turnoId?: string | null
+  /**
+   * Los reportes creados desde la versión con supervisión solo se muestran al
+   * cliente cuando un administrador la termina. Los anteriores (sin el campo)
+   * se consideran ya entregados.
+   */
+  requiereSupervision?: boolean
+  /** Constancia de la revisión del administrador. */
+  supervision?: { por: string; porId: string; fecha: string } | null
+  /**
+   * Estado crudo del formulario tal como lo dejó quien lo diligenció.
+   * Permite reanudar un borrador o editar el reporte sin reconstruirlo.
+   */
+  borradorDatos?: unknown
+}
+
+/** Jornada de trabajo del técnico. Agrupa sus borradores y reportes. */
+export interface Turno {
+  id: string
+  tecnicoId: string
+  tecnico: string
+  /** ISO con hora. */
+  inicio: string
+  fin: string | null
 }
 
 export interface TokenPayload {

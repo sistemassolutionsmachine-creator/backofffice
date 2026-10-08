@@ -1,9 +1,175 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Camera, CameraOff, CheckCircle2, Keyboard, Zap } from 'lucide-react'
-import { Button, Card, PageHeader } from '../../components/ui'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  Camera,
+  CameraOff,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Keyboard,
+  LoaderCircle,
+  Play,
+  Square,
+  Trash2,
+  Zap,
+} from 'lucide-react'
+import { Button, Card, PageHeader, cx } from '../../components/ui'
 import { api } from '../../api/client'
-import type { Equipo } from '../../types'
+import type { Equipo, Revision, Turno } from '../../types'
+
+/** Turno de trabajo y borradores pendientes del técnico. */
+function TurnoYBorradores() {
+  const [turno, setTurno] = useState<Turno | null>(null)
+  const [borradores, setBorradores] = useState<Revision[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [operando, setOperando] = useState(false)
+  const [eliminando, setEliminando] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const cargar = async () => {
+    try {
+      const [t, b] = await Promise.all([api.turnos.activo(), api.revisiones.borradores()])
+      setTurno(t)
+      setBorradores(b)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo consultar el turno')
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    void cargar()
+  }, [])
+
+  const alternarTurno = async () => {
+    if (operando) return
+    setOperando(true)
+    setError(null)
+    try {
+      if (turno) {
+        await api.turnos.cerrar(turno.id)
+        setTurno(null)
+      } else {
+        setTurno(await api.turnos.iniciar())
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el turno')
+    } finally {
+      setOperando(false)
+    }
+  }
+
+  const eliminar = async (r: Revision) => {
+    if (!window.confirm('¿Eliminar este borrador? Esta acción no se puede deshacer.')) return
+    setEliminando(r.id)
+    setError(null)
+    try {
+      await api.revisiones.eliminarBorrador(r.equipoId, r.id)
+      setBorradores((lista) => lista.filter((b) => b.id !== r.id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo eliminar el borrador')
+    } finally {
+      setEliminando(null)
+    }
+  }
+
+  if (cargando) {
+    return (
+      <Card className="flex items-center gap-2 p-4 text-sm text-zinc-400">
+        <LoaderCircle className="size-4 motion-safe:animate-spin" />
+        Consultando turno y borradores…
+      </Card>
+    )
+  }
+
+  const horaInicio = turno
+    ? new Date(turno.inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    : null
+
+  return (
+    <>
+      <Card className="flex items-center justify-between gap-3 p-4 sm:p-5">
+        <div className="flex items-center gap-3">
+          <span
+            className={cx(
+              'flex size-10 items-center justify-center rounded-xl',
+              turno ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-500',
+            )}
+          >
+            <Clock className="size-5" />
+          </span>
+          <div className="leading-tight">
+            <p className="text-sm font-bold text-zinc-900">
+              {turno ? 'Turno activo' : 'Sin turno activo'}
+            </p>
+            <p className="text-xs text-zinc-500">
+              {turno
+                ? `Iniciado a las ${horaInicio}`
+                : 'Inicie su turno para agrupar los reportes de la jornada.'}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant={turno ? 'secondary' : 'primary'}
+          disabled={operando}
+          onClick={() => void alternarTurno()}
+        >
+          {turno ? <Square className="size-4" /> : <Play className="size-4" />}
+          {operando ? 'Un momento…' : turno ? 'Finalizar turno' : 'Iniciar turno'}
+        </Button>
+      </Card>
+
+      {borradores.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <p className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+            <FileText className="size-4 text-amber-600" />
+            Borradores sin terminar
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+              {borradores.length}
+            </span>
+          </p>
+          <ul className="mt-3 divide-y divide-zinc-100">
+            {borradores.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0 leading-tight">
+                  <p className="truncate text-sm font-semibold text-zinc-800">
+                    {r.tipoEquipo ?? 'Reporte'} · {r.fecha}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {r.motivo || 'Sin motivo registrado'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Link to={`/tecnico/reporte?equipo=${r.equipoId}&revision=${r.id}`}>
+                    <Button variant="secondary" className="px-3 py-2 text-xs">
+                      Continuar
+                    </Button>
+                  </Link>
+                  <button
+                    type="button"
+                    disabled={eliminando === r.id}
+                    onClick={() => void eliminar(r)}
+                    title="Eliminar borrador"
+                    className="flex size-9 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-brand-50 hover:text-brand-600"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {error && (
+        <Card className="border-brand-200 bg-brand-50 p-3">
+          <p className="text-xs font-semibold text-brand-700">{error}</p>
+        </Card>
+      )}
+    </>
+  )
+}
 
 /* API BarcodeDetector (aún sin tipos en TS) */
 interface QrDetectado {
@@ -105,6 +271,8 @@ export function TecnicoEscanearPage() {
         title="Escanear código QR"
         subtitle="Apunte la cámara al QR del equipo para abrir su reporte de mantenimiento."
       />
+
+      <TurnoYBorradores />
 
       {/* Visor de cámara */}
       <Card className="overflow-hidden bg-ink-950 p-0">

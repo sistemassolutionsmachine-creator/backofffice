@@ -1,4 +1,10 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 /**
@@ -30,6 +36,17 @@ export async function urlDeDescarga(clave: string) {
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: clave }), {
     expiresIn: 15 * MINUTOS,
   })
+}
+
+/** Borra en lote las evidencias de un borrador descartado. */
+export async function eliminarObjetos(claves: string[]) {
+  if (claves.length === 0) return
+  await s3.send(
+    new DeleteObjectsCommand({
+      Bucket: BUCKET,
+      Delete: { Objects: claves.map((Key) => ({ Key })), Quiet: true },
+    }),
+  )
 }
 
 /** Rutas ordenadas por empresa/equipo para facilitar auditoría y ciclo de vida. */
